@@ -32,11 +32,13 @@ db.init_app(app)
 from whatsapp_webhook import webhook_bp
 from ticket_system import tickets_bp
 from appointment_scheduler import appointments_bp
+from settings_api import settings_bp
 
 # Register blueprints
 app.register_blueprint(webhook_bp, url_prefix='/webhook')
 app.register_blueprint(tickets_bp, url_prefix='/tickets')
 app.register_blueprint(appointments_bp, url_prefix='/appointments')
+app.register_blueprint(settings_bp)
 
 # Main routes
 @app.route('/')

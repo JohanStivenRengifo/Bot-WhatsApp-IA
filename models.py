@@ -101,3 +101,44 @@ class Message(db.Model):
     intent = db.Column(db.String(50))
     sentiment = db.Column(db.String(20))
     entities = db.Column(db.JSON)
+
+class Settings(db.Model):
+    """Settings model for storing application configuration"""
+    id = db.Column(db.Integer, primary_key=True)
+    whatsapp_api_token = db.Column(db.String(255))
+    whatsapp_phone_number_id = db.Column(db.String(255))
+    whatsapp_webhook_verify_token = db.Column(db.String(255))
+    gemini_api_key = db.Column(db.String(255))
+    gemini_model = db.Column(db.String(255))
+    database_url = db.Column(db.String(255))
+    notifications_email_alerts = db.Column(db.Boolean, default=False)
+    notifications_email_recipients = db.Column(db.String(255))
+
+    @staticmethod
+    def get_settings():
+        settings = Settings.query.first()
+        if not settings:
+            settings = Settings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+    def to_dict(self):
+        return {
+            'whatsapp': {
+                'apiToken': self.whatsapp_api_token or '',
+                'phoneNumberId': self.whatsapp_phone_number_id or '',
+                'webhookVerifyToken': self.whatsapp_webhook_verify_token or ''
+            },
+            'gemini': {
+                'apiKey': self.gemini_api_key or '',
+                'model': self.gemini_model or 'gemini-2.0-flash-lite'
+            },
+            'database': {
+                'url': self.database_url or ''
+            },
+            'notifications': {
+                'emailAlerts': self.notifications_email_alerts or False,
+                'emailRecipients': self.notifications_email_recipients or ''
+            }
+        }
