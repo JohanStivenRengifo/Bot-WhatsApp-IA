@@ -50,6 +50,14 @@ function Layout() {
                     <i className="fas fa-calendar-alt mr-1"></i> Citas
                   </NavLink>
                   <NavLink 
+                    to="/crm" 
+                    className={({isActive}) => 
+                      `px-3 py-2 rounded-md text-sm font-medium ${isActive ? 'bg-gray-900 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`
+                    }
+                  >
+                    <i className="fas fa-users mr-1"></i> CRM
+                  </NavLink>
+                  <NavLink 
                     to="/settings" 
                     className={({isActive}) => 
                       `px-3 py-2 rounded-md text-sm font-medium ${isActive ? 'bg-gray-900 text-white' : 'text-gray-300 hover:bg-gray-700 hover:text-white'}`

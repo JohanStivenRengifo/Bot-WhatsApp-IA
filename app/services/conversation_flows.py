@@ -2,10 +2,10 @@ import logging
 import json
 from datetime import datetime
 
-from database import db
-from models import Customer, Conversation, Message, Ticket
-from ticket_system import should_create_ticket
-from appointment_scheduler import check_appointment_availability
+from app.database import db
+from app.models import Customer, Conversation, Message, Ticket
+from app.services.ticket_system import should_create_ticket
+from app.services.appointment_scheduler import check_appointment_availability
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -102,76 +102,63 @@ def update_conversation_state(conversation, new_state):
                 entities = json.loads(entities)
             elif entities is None:
                 entities = {}
-            
-            # Update conversation state
+                
+            # Update the state
             entities['conversation_state'] = new_state
-            last_message.entities = entities
             
+            # Save back to the message
+            last_message.entities = entities
             db.session.commit()
-            logger.info(f"Updated conversation state to {new_state}")
-    
+            
     except Exception as e:
         logger.error(f"Error updating conversation state: {str(e)}")
+        db.session.rollback()
 
 def determine_next_state(current_state, intent, entities):
     """Determine the next conversation state based on intent and current state"""
-    # New conversation or greeting
+    # Map intents to states
+    intent_state_map = {
+        'saludo': FLOW_STATES['GREETING'],
+        'despedida': FLOW_STATES['CLOSING'],
+        'reporte_falla': FLOW_STATES['PROBLEM_IDENTIFICATION'],
+        'solicitud_ayuda': FLOW_STATES['PROBLEM_IDENTIFICATION'],
+        'solicitud_cita': FLOW_STATES['APPOINTMENT_SCHEDULING'],
+        'consulta_servicio': FLOW_STATES['INFORMATION_GATHERING'],
+        'create_ticket': FLOW_STATES['TICKET_CREATION']
+    }
+    
+    # Check if we have a direct mapping for this intent
+    if intent in intent_state_map:
+        return intent_state_map[intent]
+    
+    # State transition logic based on current state and intent
     if current_state == FLOW_STATES['GREETING']:
-        if intent in ['reporte_problema', 'solicitud_soporte']:
+        if 'problema' in intent or 'falla' in intent or 'error' in intent:
             return FLOW_STATES['PROBLEM_IDENTIFICATION']
-        elif intent == 'solicitud_cita':
+        elif 'cita' in intent or 'visita' in intent or 'técnico' in intent:
             return FLOW_STATES['APPOINTMENT_SCHEDULING']
-        elif intent == 'consulta_informacion':
-            return FLOW_STATES['INFORMATION_GATHERING']
         else:
-            return FLOW_STATES['GREETING']
-    
-    # Problem identification phase
+            return FLOW_STATES['INFORMATION_GATHERING']
+            
     elif current_state == FLOW_STATES['PROBLEM_IDENTIFICATION']:
-        if intent == 'crear_ticket':
-            return FLOW_STATES['TICKET_CREATION']
-        elif intent == 'solicitud_cita':
-            return FLOW_STATES['APPOINTMENT_SCHEDULING']
-        elif intent == 'solicitud_ayuda':
+        if 'solución' in intent or 'resolver' in intent:
             return FLOW_STATES['TROUBLESHOOTING']
+        elif 'ticket' in intent or 'reporte' in intent:
+            return FLOW_STATES['TICKET_CREATION']
+        elif 'cita' in intent or 'visita' in intent or 'técnico' in intent:
+            return FLOW_STATES['APPOINTMENT_SCHEDULING']
         else:
-            return FLOW_STATES['PROBLEM_IDENTIFICATION']
-    
-    # Troubleshooting phase
+            return current_state
+            
     elif current_state == FLOW_STATES['TROUBLESHOOTING']:
-        if intent == 'crear_ticket':
+        if 'ticket' in intent or 'reporte' in intent:
             return FLOW_STATES['TICKET_CREATION']
-        elif intent == 'problema_resuelto':
-            return FLOW_STATES['CLOSING']
-        elif intent == 'solicitud_cita':
+        elif 'cita' in intent or 'visita' in intent or 'técnico' in intent:
             return FLOW_STATES['APPOINTMENT_SCHEDULING']
-        else:
-            return FLOW_STATES['TROUBLESHOOTING']
-    
-    # Ticket creation phase
-    elif current_state == FLOW_STATES['TICKET_CREATION']:
-        if intent == 'confirmar_ticket':
+        elif 'gracias' in intent or 'resuelto' in intent or 'solucionado' in intent:
             return FLOW_STATES['CLOSING']
-        elif intent == 'solicitud_cita':
-            return FLOW_STATES['APPOINTMENT_SCHEDULING']
         else:
-            return FLOW_STATES['TICKET_CREATION']
+            return current_state
     
-    # Appointment scheduling phase
-    elif current_state == FLOW_STATES['APPOINTMENT_SCHEDULING']:
-        if intent == 'confirmar_cita':
-            return FLOW_STATES['CLOSING']
-        elif intent == 'cambiar_fecha':
-            return FLOW_STATES['APPOINTMENT_SCHEDULING']
-        else:
-            return FLOW_STATES['APPOINTMENT_SCHEDULING']
-    
-    # Information gathering phase
-    elif current_state == FLOW_STATES['INFORMATION_GATHERING']:
-        if intent == 'consulta_adicional':
-            return FLOW_STATES['INFORMATION_GATHERING']
-        else:
-            return FLOW_STATES['CLOSING']
-    
-    # Default to current state if no transition is found
+    # Default: stay in current state if no transition is triggered
     return current_state

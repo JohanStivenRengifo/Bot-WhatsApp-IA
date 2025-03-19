@@ -1,5 +1,5 @@
 from datetime import datetime
-from database import db
+from app.database import db
 from flask_login import UserMixin
 
 class User(UserMixin, db.Model):
@@ -105,14 +105,24 @@ class Message(db.Model):
 class Settings(db.Model):
     """Settings model for storing application configuration"""
     id = db.Column(db.Integer, primary_key=True)
+    # WhatsApp settings
+    whatsapp_api_url = db.Column(db.String(255), default="https://graph.facebook.com/v17.0")
     whatsapp_api_token = db.Column(db.String(255))
     whatsapp_phone_number_id = db.Column(db.String(255))
     whatsapp_webhook_verify_token = db.Column(db.String(255))
+    # Gemini settings
     gemini_api_key = db.Column(db.String(255))
     gemini_model = db.Column(db.String(255))
+    # Database settings
     database_url = db.Column(db.String(255))
+    # Notification settings
     notifications_email_alerts = db.Column(db.Boolean, default=False)
     notifications_email_recipients = db.Column(db.String(255))
+    # CRM settings
+    crm_api_url = db.Column(db.String(255))
+    crm_api_key = db.Column(db.String(255))
+    # Session settings
+    session_secret = db.Column(db.String(255), default="bot-meta-secret-key")
 
     @staticmethod
     def get_settings():
@@ -126,6 +136,7 @@ class Settings(db.Model):
     def to_dict(self):
         return {
             'whatsapp': {
+                'apiUrl': self.whatsapp_api_url or 'https://graph.facebook.com/v17.0',
                 'apiToken': self.whatsapp_api_token or '',
                 'phoneNumberId': self.whatsapp_phone_number_id or '',
                 'webhookVerifyToken': self.whatsapp_webhook_verify_token or ''
@@ -140,5 +151,12 @@ class Settings(db.Model):
             'notifications': {
                 'emailAlerts': self.notifications_email_alerts or False,
                 'emailRecipients': self.notifications_email_recipients or ''
+            },
+            'crm': {
+                'apiUrl': self.crm_api_url or '',
+                'apiKey': self.crm_api_key or ''
+            },
+            'session': {
+                'secret': self.session_secret or 'bot-meta-secret-key'
             }
         }

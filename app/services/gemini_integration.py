@@ -1,21 +1,23 @@
-import os
 import logging
 import json
 from datetime import datetime
 import google.generativeai as genai
-from database import db
-from models import Customer, Conversation, Message
+from app.database import db
+from app.models import Customer, Conversation, Message
+from app.services.config_service import ConfigService
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+# Get configuration service
+config_service = ConfigService()
+
 # Set up Gemini AI client
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "AIzaSyAizkVPMrAmdJfS-v5ahlgVp8scOYcLgZE")
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=config_service.get_gemini_api_key())
 
 # Initialize the Gemini model
-MODEL_NAME = "gemini-2.0-flash-lite"
+MODEL_NAME = config_service.get_gemini_model()
 
 def get_conversation_history(conversation_id, limit=10):
     """Get recent conversation history for context"""
@@ -99,58 +101,49 @@ def process_message(message_text, customer, conversation):
         # Extract intent, sentiment and entities if available
         try:
             # Ask Gemini to analyze the message
-            analysis_prompt = f"""
-            Analiza el siguiente mensaje del cliente y proporciona una respuesta en formato JSON:
+            analysis_prompt = f"""Analiza el siguiente mensaje del cliente y extrae:
+            1. La intención principal (intent) como una sola palabra o frase corta (ej: consulta_servicio, reporte_falla, solicitud_cita, etc)
+            2. El sentimiento general (sentiment) como: positivo, negativo o neutral
+            3. Entidades importantes (entities) como: fechas, horas, nombres, números de cuenta, tipos de problemas, etc.
             
             Mensaje: "{message_text}"
             
-            Proporciona:
-            1. "intent": La intención principal (consulta_general, reporte_problema, solicitud_cita, crear_ticket, etc.)
-            2. "sentiment": El sentimiento general (positivo, neutral, negativo)
-            3. "entities": Entidades importantes como tipo de problema, servicio mencionado, etc.
-            4. "urgency": Nivel de urgencia (bajo, medio, alto)
-            
-            Responde SOLO con el JSON, sin texto adicional.
+            Responde en formato JSON con las claves: intent, sentiment, entities
             """
             
             analysis_response = model.generate_content(analysis_prompt)
             analysis_text = analysis_response.text
             
-            # Clean up the response to get valid JSON
-            if "```json" in analysis_text:
-                analysis_text = analysis_text.split("```json")[1].split("```")[0].strip()
-            elif "```" in analysis_text:
-                analysis_text = analysis_text.split("```")[1].split("```")[0].strip()
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'```json\n(.+?)\n```', analysis_text, re.DOTALL)
+            if json_match:
+                analysis_json = json.loads(json_match.group(1))
+            else:
+                analysis_json = json.loads(analysis_text)
             
-            # Parse the JSON
-            analysis = json.loads(analysis_text)
+            intent = analysis_json.get('intent', 'consulta_general')
+            sentiment = analysis_json.get('sentiment', 'neutral')
+            entities = analysis_json.get('entities', {})
             
-            logger.info(f"Message analysis: {analysis}")
         except Exception as e:
             logger.error(f"Error analyzing message: {str(e)}")
-            analysis = {
-                "intent": "consulta_general",
-                "sentiment": "neutral",
-                "entities": {},
-                "urgency": "bajo"
-            }
+            intent = 'consulta_general'
+            sentiment = 'neutral'
+            entities = {}
         
-        # Return the response with analysis
         return {
-            "response_text": response_text,
-            "intent": analysis.get("intent"),
-            "sentiment": analysis.get("sentiment"),
-            "entities": analysis.get("entities"),
-            "urgency": analysis.get("urgency")
+            'response': response_text,
+            'intent': intent,
+            'sentiment': sentiment,
+            'entities': entities
         }
-    
+        
     except Exception as e:
         logger.error(f"Error processing message with Gemini: {str(e)}")
-        # Return a fallback response
         return {
-            "response_text": "Lo siento, estoy teniendo problemas para procesar tu mensaje. ¿Podrías intentar explicar tu situación de otra manera?",
-            "intent": "error",
-            "sentiment": "neutral",
-            "entities": {},
-            "urgency": "bajo"
+            'response': "Lo siento, estoy teniendo problemas para procesar tu mensaje. ¿Podrías intentarlo de nuevo o contactar directamente con nuestro equipo de soporte?",
+            'intent': 'error',
+            'sentiment': 'neutral',
+            'entities': {}
         }

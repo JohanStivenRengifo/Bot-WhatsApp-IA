@@ -11,7 +11,15 @@ function Dashboard() {
     conversationsToday: 0,
     ticketsCreated: 0,
     appointmentsScheduled: 0,
-    activeConversations: 0
+    activeConversations: 0,
+    systemStatus: {
+      status: 'error',
+      services: {
+        database: { status: 'error', message: '' },
+        whatsapp: { status: 'error', message: '' },
+        gemini: { status: 'error', message: '' }
+      }
+    }
   });
   
   const [recentTickets, setRecentTickets] = useState([]);
@@ -92,9 +100,33 @@ function Dashboard() {
             Sistema de atención al cliente impulsado por la IA de Google Gemini para brindar soporte automático
             a clientes de Conecta2.
           </p>
-          <div className="bg-green-500 text-white px-3 py-1 rounded-full flex items-center">
+          <div 
+            className={`${stats.systemStatus.status === 'ok' ? 'bg-green-500' : 'bg-red-500'} text-white px-3 py-1 rounded-full flex items-center group relative cursor-help`}
+            title="Estado del Sistema"
+          >
             <div className="w-2 h-2 bg-white rounded-full mr-2 animate-pulse"></div>
-            Activo
+            {stats.systemStatus.status === 'ok' ? 'Sistemas Activos' : 'Error en Sistemas'}
+            
+            <div className="absolute hidden group-hover:block w-64 bg-gray-900 text-sm text-white p-2 rounded-lg -bottom-32 right-0 shadow-lg">
+              <div className="flex items-center justify-between mb-2">
+                <span>Base de Datos:</span>
+                <span className={`px-2 py-1 rounded ${stats.systemStatus.services.database.status === 'ok' ? 'bg-green-600' : 'bg-red-600'}`}>
+                  {stats.systemStatus.services.database.status === 'ok' ? 'Conectado' : 'Error'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span>WhatsApp API:</span>
+                <span className={`px-2 py-1 rounded ${stats.systemStatus.services.whatsapp.status === 'ok' ? 'bg-green-600' : 'bg-red-600'}`}>
+                  {stats.systemStatus.services.whatsapp.status === 'ok' ? 'Conectado' : 'Error'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span>Gemini AI:</span>
+                <span className={`px-2 py-1 rounded ${stats.systemStatus.services.gemini.status === 'ok' ? 'bg-green-600' : 'bg-red-600'}`}>
+                  {stats.systemStatus.services.gemini.status === 'ok' ? 'Conectado' : 'Error'}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -169,4 +201,19 @@ function Dashboard() {
                           color: 'rgba(255, 255, 255, 0.1)'
                         },
                         ticks: {
-                          color: 'rgba(255, 255, 255, 0.7
+                          color: 'rgba(255, 255, 255, 0.7)'
+                        }
+                      }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+export default Dashboard;

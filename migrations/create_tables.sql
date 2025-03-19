@@ -90,6 +90,22 @@ CREATE TABLE messages (
     CONSTRAINT valid_direction CHECK (direction IN ('incoming', 'outgoing'))
 );
 
+-- Settings table for application configuration
+CREATE TABLE settings (
+    id SERIAL PRIMARY KEY,
+    whatsapp_api_token VARCHAR(255),
+    whatsapp_phone_number_id VARCHAR(255),
+    whatsapp_webhook_verify_token VARCHAR(255),
+    gemini_api_key VARCHAR(255),
+    gemini_model VARCHAR(255),
+    database_url VARCHAR(255),
+    notifications_email_alerts BOOLEAN DEFAULT FALSE,
+    notifications_email_recipients VARCHAR(255),
+    crm_api_url VARCHAR(255),
+    crm_api_key VARCHAR(255),
+    session_secret VARCHAR(255) DEFAULT 'bot-meta-secret-key'
+);
+
 -- Create indexes for better query performance
 CREATE INDEX idx_tickets_customer ON tickets(customer_id);
 CREATE INDEX idx_tickets_status ON tickets(status);

@@ -197,52 +197,29 @@ function TicketsPage() {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{ticket.customer_name}</td>
                       <td className="px-6 py-4 text-sm text-gray-300 max-w-xs truncate">{ticket.issue_type}</td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          ticket.status === 'open' ? 'bg-red-900 text-red-300' :
-                          ticket.status === 'in_progress' ? 'bg-blue-900 text-blue-300' :
-                          'bg-green-900 text-green-300'
-                        }`}>
-                          {ticket.status === 'open' ? 'Abierto' :
-                           ticket.status === 'in_progress' ? 'En Progreso' :
-                           'Cerrado'}
+                        <span className={`px-2 py-1 text-xs rounded-full ${ticket.status === 'open' ? 'bg-red-900 text-red-300' : ticket.status === 'in_progress' ? 'bg-blue-900 text-blue-300' : 'bg-green-900 text-green-300'}`}>
+                          {ticket.status === 'open' ? 'Abierto' : ticket.status === 'in_progress' ? 'En Progreso' : 'Cerrado'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          ticket.priority === 'high' ? 'bg-red-900 text-red-300' :
-                          ticket.priority === 'medium' ? 'bg-yellow-900 text-yellow-300' :
-                          'bg-green-900 text-green-300'
-                        }`}>
-                          {ticket.priority === 'high' ? 'Alta' :
-                           ticket.priority === 'medium' ? 'Media' :
-                           'Baja'}
+                        <span className={`px-2 py-1 text-xs rounded-full ${ticket.priority === 'high' ? 'bg-red-900 text-red-300' : ticket.priority === 'medium' ? 'bg-yellow-900 text-yellow-300' : 'bg-green-900 text-green-300'}`}>
+                          {ticket.priority === 'high' ? 'Alta' : ticket.priority === 'medium' ? 'Media' : 'Baja'}
                         </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
                         {new Date(ticket.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <button 
-                          onClick={() => viewTicketDetails(ticket.id)}
-                          className="text-primary-400 hover:text-primary-300 mr-3"
-                        >
+                        <button onClick={() => viewTicketDetails(ticket.id)} className="text-primary-400 hover:text-primary-300 mr-3">
                           <i className="fas fa-eye"></i>
                         </button>
                         {ticket.status === 'open' && (
-                          <button 
-                            onClick={() => updateTicketStatus(ticket.id, 'in_progress')}
-                            className="text-blue-400 hover:text-blue-300 mr-3"
-                            title="Marcar en progreso"
-                          >
+                          <button onClick={() => updateTicketStatus(ticket.id, 'in_progress')} className="text-blue-400 hover:text-blue-300 mr-3" title="Marcar en progreso">
                             <i className="fas fa-play"></i>
                           </button>
                         )}
                         {ticket.status === 'in_progress' && (
-                          <button 
-                            onClick={() => updateTicketStatus(ticket.id, 'closed')}
-                            className="text-green-400 hover:text-green-300 mr-3"
-                            title="Marcar como cerrado"
-                          >
+                          <button onClick={() => updateTicketStatus(ticket.id, 'closed')} className="text-green-400 hover:text-green-300 mr-3" title="Marcar como cerrado">
                             <i className="fas fa-check"></i>
                           </button>
                         )}
@@ -252,7 +229,7 @@ function TicketsPage() {
                 ) : (
                   <tr>
                     <td colSpan="7" className="px-6 py-4 text-center text-gray-400">
-                      No se encontraron tickets con los filtros seleccionados
+                      No hay tickets disponibles
                     </td>
                   </tr>
                 )}
@@ -307,4 +284,181 @@ function TicketsPage() {
                         'bg-green-900 text-green-300'
                       }`}>
                         {currentTicket.priority === 'high' ? 'Alta' :
-                         currentTicket
+                         currentTicket.priority === 'medium' ? 'Media' :
+                         'Baja'}
+                      </span>
+                    </div>
+                    <div className="mb-3">
+                      <span className="text-gray-400 block text-sm">Descripción:</span>
+                      <span className="text-white">{currentTicket.description}</span>
+                    </div>
+                    <div className="mb-3">
+                      <span className="text-gray-400 block text-sm">Fecha de Creación:</span>
+                      <span className="text-white">{new Date(currentTicket.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-medium text-white mb-2">Información del Cliente</h3>
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <div className="mb-3">
+                      <span className="text-gray-400 block text-sm">Nombre:</span>
+                      <span className="text-white">{currentTicket.customer_name}</span>
+                    </div>
+                    <div className="mb-3">
+                      <span className="text-gray-400 block text-sm">Teléfono:</span>
+                      <span className="text-white">{currentTicket.customer_phone}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-6">
+                <h3 className="text-lg font-medium text-white mb-2">Notas</h3>
+                <div className="space-y-4 mb-4">
+                  {currentTicket.notes && currentTicket.notes.map((note, index) => (
+                    <div key={index} className="bg-gray-700 rounded-lg p-4">
+                      <p className="text-white">{note.content}</p>
+                      <p className="text-sm text-gray-400 mt-2">
+                        {new Date(note.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={ticketNote}
+                    onChange={(e) => setTicketNote(e.target.value)}
+                    placeholder="Agregar una nota..."
+                    className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2"
+                  />
+                  <button
+                    onClick={addTicketNote}
+                    disabled={!ticketNote.trim()}
+                    className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+                  >
+                    Agregar Nota
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Ticket Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-800 rounded-lg shadow-lg w-full max-w-4xl">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <h2 className="text-2xl font-bold text-white">Crear Nuevo Ticket</h2>
+                <button 
+                  onClick={() => setShowCreateModal(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  <i className="fas fa-times"></i>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Teléfono del Cliente
+                  </label>
+                  <div className="flex space-x-2">
+                    <input
+                      type="text"
+                      value={newTicket.customer_phone}
+                      onChange={(e) => setNewTicket({ ...newTicket, customer_phone: e.target.value })}
+                      className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2"
+                      placeholder="Ingrese el número de teléfono"
+                    />
+                    <button
+                      onClick={searchCustomer}
+                      disabled={!newTicket.customer_phone}
+                      className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+                    >
+                      Buscar
+                    </button>
+                  </div>
+                </div>
+
+                {customerSearchResult && (
+                  <div className="bg-gray-700 rounded-lg p-4">
+                    <h3 className="text-white font-medium mb-2">Cliente Encontrado:</h3>
+                    <p className="text-gray-300">{customerSearchResult.name || customerSearchResult.phone_number}</p>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Tipo de Problema
+                  </label>
+                  <select
+                    value={newTicket.issue_type}
+                    onChange={(e) => setNewTicket({ ...newTicket, issue_type: e.target.value })}
+                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2"
+                  >
+                    <option value="">Seleccione el tipo de problema</option>
+                    <option value="technical">Problema Técnico</option>
+                    <option value="billing">Problema de Facturación</option>
+                    <option value="service">Solicitud de Servicio</option>
+                    <option value="complaint">Queja</option>
+                    <option value="inquiry">Consulta General</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Descripción
+                  </label>
+                  <textarea
+                    value={newTicket.description}
+                    onChange={(e) => setNewTicket({ ...newTicket, description: e.target.value })}
+                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 h-32"
+                    placeholder="Describa el problema..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">
+                    Prioridad
+                  </label>
+                  <select
+                    value={newTicket.priority}
+                    onChange={(e) => setNewTicket({ ...newTicket, priority: e.target.value })}
+                    className="w-full bg-gray-700 text-white rounded-lg px-4 py-2"
+                  >
+                    <option value="low">Baja</option>
+                    <option value="medium">Media</option>
+                    <option value="high">Alta</option>
+                  </select>
+                </div>
+
+                <div className="flex justify-end space-x-2 mt-6">
+                  <button
+                    onClick={() => setShowCreateModal(false)}
+                    className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={createTicket}
+                    className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg"
+                  >
+                    Crear Ticket
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default TicketsPage;

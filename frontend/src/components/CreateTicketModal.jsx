@@ -42,116 +42,130 @@ function CreateTicketModal({ onClose, onTicketCreated }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-gray-800 rounded-lg max-w-lg w-full">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div className="bg-gray-800 rounded-xl max-w-lg w-full shadow-2xl border border-gray-700 transform transition-all">
         <div className="p-6">
-          <div className="flex justify-between items-start mb-4">
-            <h2 className="text-2xl font-bold text-white">Create New Ticket</h2>
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <h2 className="text-2xl font-bold text-white mb-1">Crear Nuevo Ticket</h2>
+              <p className="text-gray-400 text-sm">Ingrese los detalles del ticket</p>
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white"
+              className="text-gray-400 hover:text-white transition-colors duration-200 p-1"
             >
               <i className="fas fa-times"></i>
             </button>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
-                Customer Phone Number
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Número de Teléfono del Cliente
               </label>
               <div className="flex space-x-2">
                 <input
                   type="text"
                   value={formData.customer_phone}
                   onChange={(e) => setFormData({ ...formData, customer_phone: e.target.value })}
-                  className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-2"
-                  placeholder="Enter phone number"
+                  className="flex-1 bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
+                  placeholder="Ingrese el número de teléfono"
                   required
                 />
                 <button
                   type="button"
                   onClick={searchCustomer}
                   disabled={loading || !formData.customer_phone}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-lg disabled:opacity-50 transition-colors duration-200 font-medium shadow-lg hover:shadow-indigo-500/30 flex items-center"
                 >
-                  Search
+                  {loading ? (
+                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                  ) : (
+                    <><i className="fas fa-search mr-2"></i> Buscar</>
+                  )}
                 </button>
               </div>
             </div>
 
             {customerSearchResult && (
-              <div className="bg-gray-700 rounded-lg p-4">
-                <h3 className="text-white font-medium mb-2">Customer Found:</h3>
+              <div className="bg-gray-700/50 rounded-lg p-4 border border-gray-600">
+                <h3 className="text-white font-medium mb-2 flex items-center">
+                  <i className="fas fa-user-check text-green-500 mr-2"></i>
+                  Cliente Encontrado:
+                </h3>
                 <p className="text-gray-300">{customerSearchResult.name || customerSearchResult.phone_number}</p>
                 {customerSearchResult.email && (
-                  <p className="text-gray-300">{customerSearchResult.email}</p>
+                  <p className="text-gray-300 mt-1">{customerSearchResult.email}</p>
                 )}
               </div>
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
-                Issue Type
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Tipo de Problema
               </label>
               <select
                 value={formData.issue_type}
                 onChange={(e) => setFormData({ ...formData, issue_type: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
                 required
               >
-                <option value="">Select issue type</option>
-                <option value="technical">Technical Issue</option>
-                <option value="billing">Billing Issue</option>
-                <option value="service">Service Request</option>
-                <option value="complaint">Complaint</option>
-                <option value="inquiry">General Inquiry</option>
+                <option value="">Seleccione el tipo de problema</option>
+                <option value="technical">Problema Técnico</option>
+                <option value="billing">Problema de Facturación</option>
+                <option value="service">Solicitud de Servicio</option>
+                <option value="complaint">Queja</option>
+                <option value="inquiry">Consulta General</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
-                Description
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Descripción
               </label>
               <textarea
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 h-32"
-                placeholder="Describe the issue..."
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200 min-h-[8rem] resize-y"
+                placeholder="Describa el problema..."
                 required
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
-                Priority
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Prioridad
               </label>
               <select
                 value={formData.priority}
                 onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                className="w-full bg-gray-700 text-white rounded-lg px-4 py-2"
+                className="w-full bg-gray-700 text-white rounded-lg px-4 py-3 border border-gray-600 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 transition-all duration-200"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="urgent">Urgent</option>
+                <option value="low">Baja</option>
+                <option value="medium">Media</option>
+                <option value="high">Alta</option>
+                <option value="urgent">Urgente</option>
               </select>
             </div>
 
-            <div className="flex justify-end space-x-2">
+            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-700">
               <button
                 type="button"
                 onClick={onClose}
-                className="bg-gray-600 hover:bg-gray-500 text-white px-4 py-2 rounded-lg"
+                className="px-6 py-3 rounded-lg text-gray-300 hover:text-white hover:bg-gray-700 transition-colors duration-200"
               >
-                Cancel
+                Cancelar
               </button>
               <button
                 type="submit"
                 disabled={loading}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg disabled:opacity-50"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-lg disabled:opacity-50 transition-colors duration-200 font-medium shadow-lg hover:shadow-indigo-500/30 flex items-center"
               >
-                Create Ticket
+                {loading ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                ) : (
+                  <>Crear Ticket</>
+                )}
               </button>
             </div>
           </form>

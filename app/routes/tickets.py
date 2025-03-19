@@ -5,8 +5,9 @@ import string
 from datetime import datetime
 from flask import Blueprint, render_template, request, jsonify
 
-from database import db
-from models import Customer, Conversation, Message, Ticket, TicketNote
+from app.database import db
+from app.models import Customer, Conversation, Message, Ticket, TicketNote
+from app.services.ticket_system import generate_ticket_number
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -174,11 +175,11 @@ def update_ticket(ticket_id):
         if 'priority' in data:
             ticket.priority = data['priority']
         
+        if 'issue_type' in data:
+            ticket.issue_type = data['issue_type']
+        
         if 'description' in data:
             ticket.description = data['description']
-        
-        # Always update the updated_at timestamp
-        ticket.updated_at = datetime.utcnow()
         
         # Add note if provided
         if 'note' in data and data['note']:
@@ -190,11 +191,15 @@ def update_ticket(ticket_id):
             )
             db.session.add(note)
         
+        # Update timestamp
+        ticket.updated_at = datetime.utcnow()
+        
         db.session.commit()
         
         return jsonify({
             'success': True,
-            'ticket_id': ticket.id
+            'ticket_id': ticket.id,
+            'status': ticket.status
         })
     
     except Exception as e:
@@ -205,93 +210,6 @@ def update_ticket(ticket_id):
 def generate_ticket_number():
     """Generate a unique ticket number"""
     prefix = "TKT"
-    date_str = datetime.utcnow().strftime("%y%m%d")
-    random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
-    
-    ticket_number = f"{prefix}-{date_str}-{random_str}"
-    
-    # Check if ticket number already exists
-    while Ticket.query.filter_by(ticket_number=ticket_number).first():
-        random_str = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
-        ticket_number = f"{prefix}-{date_str}-{random_str}"
-    
-    return ticket_number
-
-def should_create_ticket(message_text, ai_response):
-    """Determine if a ticket should be created based on message and AI analysis"""
-    intent = ai_response.get('intent', '')
-    entities = ai_response.get('entities', {})
-    urgency = ai_response.get('urgency', 'bajo')
-    
-    # Automatic ticket creation criteria
-    if intent in ['crear_ticket', 'reporte_problema']:
-        return True
-    
-    if urgency in ['alto', 'medio'] and 'problema' in entities:
-        return True
-    
-    # Keywords that indicate a ticket might be needed
-    ticket_keywords = [
-        'no funciona', 'problema', 'error', 'falla', 'avería', 'roto',
-        'sin servicio', 'sin internet', 'sin señal', 'técnico',
-        'visita', 'reparación', 'arreglar'
-    ]
-    
-    for keyword in ticket_keywords:
-        if keyword in message_text.lower():
-            return True
-    
-    return False
-
-def create_ticket_from_conversation(customer, conversation, ai_response):
-    """Create a ticket from a conversation"""
-    try:
-        # Extract relevant information
-        entities = ai_response.get('entities', {})
-        issue_type = entities.get('tipo_problema', 'Problema técnico')
-        
-        # Get the conversation messages for context
-        messages = Message.query.filter_by(conversation_id=conversation.id) \
-            .order_by(Message.timestamp) \
-            .all()
-        
-        # Build description from conversation
-        description = "Ticket creado desde conversación de WhatsApp:\n\n"
-        
-        # Add last 5 messages or all if less than 5
-        count = min(len(messages), 5)
-        for i in range(count):
-            msg = messages[len(messages) - count + i]
-            sender = "Cliente" if msg.direction == "incoming" else "Bot"
-            description += f"{sender} ({msg.timestamp.strftime('%H:%M:%S')}): {msg.content}\n"
-        
-        # Generate ticket number
-        ticket_number = generate_ticket_number()
-        
-        # Determine priority based on AI analysis
-        urgency = ai_response.get('urgency', 'bajo')
-        priority = 'high' if urgency == 'alto' else 'medium' if urgency == 'medio' else 'low'
-        
-        # Create ticket
-        ticket = Ticket(
-            ticket_number=ticket_number,
-            customer_id=customer.id,
-            issue_type=issue_type,
-            description=description,
-            status='open',
-            priority=priority,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow()
-        )
-        
-        db.session.add(ticket)
-        db.session.commit()
-        
-        logger.info(f"Created ticket {ticket_number} for customer {customer.id}")
-        
-        return ticket
-    
-    except Exception as e:
-        logger.error(f"Error creating ticket from conversation: {str(e)}")
-        db.session.rollback()
-        return None
+    timestamp = datetime.now().strftime("%Y%m%d")
+    random_chars = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f"{prefix}-{timestamp}-{random_chars}"

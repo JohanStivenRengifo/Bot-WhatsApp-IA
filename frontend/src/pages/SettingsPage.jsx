@@ -6,6 +6,7 @@ function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState({
     whatsapp: {
+      apiUrl: 'https://graph.facebook.com/v17.0',
       apiToken: '',
       phoneNumberId: '',
       webhookVerifyToken: ''
@@ -121,6 +122,17 @@ function SettingsPage() {
               Configuración de WhatsApp Business API
             </h2>
             <div className="grid grid-cols-1 gap-4">
+              <div>
+                <label className="block text-gray-300 mb-1">API URL</label>
+                <input
+                  type="text"
+                  name="apiUrl"
+                  value={settings.whatsapp.apiUrl}
+                  onChange={handleWhatsAppChange}
+                  className="w-full bg-gray-700 text-white rounded-lg px-4 py-2 border border-gray-600"
+                  placeholder="URL de la API de WhatsApp"
+                />
+              </div>
               <div>
                 <label className="block text-gray-300 mb-1">API Token</label>
                 <input
@@ -261,3 +273,10 @@ function SettingsPage() {
               )}
             </button>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default SettingsPage;
