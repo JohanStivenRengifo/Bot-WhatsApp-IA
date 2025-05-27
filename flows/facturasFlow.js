@@ -1,11 +1,12 @@
 // flows/facturasFlow.js
-const wisphubService = require('../services/wisphubService');
+const WisphubService = require('../services/wisphubService');
 const { formatCurrency } = require('../utils/botUtils');
 const logger = require('../utils/logger');
 
 class FacturasFlow {
     constructor(whatsappService) {
         this.whatsappService = whatsappService;
+        this.wisphubService = new WisphubService();
     }
 
     async handleFlow(conversation, message) {
@@ -25,7 +26,7 @@ class FacturasFlow {
 
     async handleInicio(conversation) {
         try {
-            const facturas = await wisphubService.getFacturasCliente(conversation.userData.id);
+            const facturas = await this.wisphubService.getFacturasCliente(conversation.userData.id);
 
             if (!facturas || facturas.length === 0) {
                 await this.whatsappService.sendTextMessage(
@@ -101,7 +102,7 @@ class FacturasFlow {
         switch (option) {
             case 'ver_vencidas':
                 conversation.currentStep = 'filtrar';
-                const facturasVencidas = await wisphubService.getFacturasCliente(
+                const facturasVencidas = await this.wisphubService.getFacturasCliente(
                     conversation.userData.id,
                     { status: 'overdue' }
                 );

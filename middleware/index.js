@@ -6,6 +6,7 @@ const inputSanitizer = require('../utils/inputSanitizer');
 const debugMiddleware = require('./debugMiddleware');
 const authMiddleware = require('./authMiddleware');
 const errorHandler = require('./errorHandler');
+const webhookVerificationMiddleware = require('./webhookVerificationMiddleware');
 
 /**
  * Middleware para validar solicitudes a la API
@@ -116,6 +117,7 @@ module.exports = {
     debugMiddleware,
     authMiddleware,
     errorHandler,
+    webhookVerificationMiddleware,
     validateApiRequest,
     sanitizeRequest,
     requestLogger,

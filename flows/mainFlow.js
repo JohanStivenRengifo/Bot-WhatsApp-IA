@@ -7,75 +7,83 @@ class MainFlow {
     }
 
     async handleFlow(conversation, message) {
-        const step = conversation.currentStep || 'welcome';
-
-        switch (step) {
-            case 'welcome':
-                return this.handleWelcome(conversation);
-            case 'menu':
-                return this.handleMenu(conversation, message);
-            default:
-                return this.handleWelcome(conversation);
+        if (!conversation.currentStep) {
+            return await this.showMainMenu(conversation);
         }
+
+        if (conversation.currentStep === 'menu') {
+            return await this.handleMenu(conversation, message);
+        }
+
+        return null;
     }
 
-    async handleWelcome(conversation) {
+    async showMainMenu(conversation) {
         conversation.currentStep = 'menu';
+        await conversation.save();
 
-        const buttons = [
-            {
-                type: 'reply',
-                reply: {
-                    id: 'registro',
-                    title: '📝 Registro'
-                }
-            },
-            {
-                type: 'reply',
-                reply: {
-                    id: 'soporte',
-                    title: '🛠️ Soporte'
-                }
-            },
-            {
-                type: 'reply',
-                reply: {
-                    id: 'info',
-                    title: 'ℹ️ Información'
-                }
-            }
-        ];
+        const menuMessage =
+            "🌟 *Menu Principal*\n\n" +
+            "Selecciona una opcion escribiendo el numero correspondiente:\n\n" +
+            "1️⃣ *Facturas*\n" +
+            "   • Ver facturas pendientes\n" +
+            "   • Consultar saldo\n" +
+            "   • Puntos de pago\n\n" +
+            "2️⃣ *Pagos*\n" +
+            "   • Enviar comprobante\n" +
+            "   • Ver historial de pagos\n\n" +
+            "3️⃣ *Soporte Tecnico*\n" +
+            "   • Reportar fallas\n" +
+            "   • Estado del servicio\n\n" +
+            "4️⃣ *Mi Cuenta*\n" +
+            "   • Mi plan\n" +
+            "   • Cambio de contrasena\n\n" +
+            "5️⃣ *Asesor* 👨‍💼\n" +
+            "   • Hablar con un asesor\n\n" +
+            "❓ Escribe el numero de la opcion que necesitas";
 
-        await this.whatsappService.sendInteractiveMessage(
+        await this.whatsappService.sendTextMessage(
             conversation.phoneNumber,
-            '¡Bienvenido a Conecta2! 👋',
-            '¿En qué puedo ayudarte hoy?',
-            buttons
+            menuMessage
         );
         return null;
     }
 
     async handleMenu(conversation, message) {
-        const action = message.toLowerCase();
+        const text = message.text ? message.text.trim() : '';
 
-        if (action.includes('registro')) {
-            conversation.currentFlow = 'registro';
-            conversation.currentStep = 'inicio';
-            return { flow: 'registro' };
-        } else if (action.includes('soporte')) {
-            conversation.currentFlow = 'soporte';
-            conversation.currentStep = 'inicio';
-            return { flow: 'soporte' };
-        } else if (action.includes('info')) {
-            conversation.currentFlow = 'info';
-            conversation.currentStep = 'inicio';
-            return { flow: 'info' };
-        } else {
-            await this.whatsappService.sendTextMessage(
-                conversation.phoneNumber,
-                "⚠️ Por favor, selecciona una de las opciones disponibles."
-            );
-            return await this.handleWelcome(conversation);
+        switch (text) {
+            case '1':
+                conversation.currentFlow = 'facturas';
+                conversation.currentStep = 'inicio';
+                return { flow: 'facturas' };
+
+            case '2':
+                conversation.currentFlow = 'pagos';
+                conversation.currentStep = 'inicio';
+                return { flow: 'pagos' };
+
+            case '3':
+                conversation.currentFlow = 'support';
+                conversation.currentStep = 'inicio';
+                return { flow: 'support' };
+
+            case '4':
+                conversation.currentFlow = 'account';
+                conversation.currentStep = 'inicio';
+                return { flow: 'account' };
+
+            case '5':
+                conversation.currentFlow = 'agent';
+                conversation.currentStep = 'inicio';
+                return { flow: 'agent' };
+
+            default:
+                await this.whatsappService.sendTextMessage(
+                    conversation.phoneNumber,
+                    '❌ Opcion no valida. Por favor, escribe un numero del 1 al 5.'
+                );
+                return await this.showMainMenu(conversation);
         }
     }
 }

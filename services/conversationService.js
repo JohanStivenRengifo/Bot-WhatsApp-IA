@@ -1,4 +1,4 @@
-x|// services/conversationService.js
+// services/conversationService.js
 const Conversation = require('../models/conversation');
 const MainFlow = require('../flows/mainFlow');
 const SupportFlow = require('../flows/supportFlow');
@@ -29,55 +29,14 @@ class ConversationService {
         try {
             conversation = await this.getOrCreateConversation(phoneNumber, profileName);
 
-            // Si la conversación está en modo de atención humana, no procesar
-            if (conversation.isHandedOverToHuman) {
-                logger.info('Mensaje recibido en conversación con atención humana:', {
-                    phoneNumber,
-                    message: typeof message === 'string' ? message.substring(0, 50) : 'interactive message'
-                });
-                return null;
-            }
-
             // Registrar el mensaje recibido
-            // Asegurarse de que el contenido del mensaje sea válido para el esquema
-            let messageContent;
-            if (typeof message === 'string') {
-                messageContent = message; // Mensaje de texto normal
-            } else if (message && typeof message === 'object') {
-                // Mensaje interactivo u otro tipo de objeto
-                // Asegurarse de que el objeto tenga una representación serializable
-                messageContent = {
-                    type: message.type || 'interactive',
-                    id: message.id || '',
-                    title: message.title || '',
-                    content: '' // Asegurar que el campo content siempre esté presente
-                };
-
-                // Si es un mensaje interactivo directo de la API, extraer los datos relevantes
-                if (message.interactive && message.interactive.button_reply) {
-                    messageContent.id = message.interactive.button_reply.id;
-                    messageContent.title = message.interactive.button_reply.title;
-                    messageContent.content = message.interactive.button_reply.title; // Usar el título como contenido
-                } else if (message.interactive && message.interactive.list_reply) {
-                    messageContent.id = message.interactive.list_reply.id;
-                    messageContent.title = message.interactive.list_reply.title;
-                    messageContent.content = message.interactive.list_reply.title; // Usar el título como contenido
-                }
-            } else {
-                // Valor por defecto si el mensaje es undefined o null
-                messageContent = { type: 'unknown', content: 'Mensaje sin contenido' };
-            }
-
             conversation.messages.push({
                 from: 'user',
-                content: messageContent,
+                content: message,
                 timestamp: new Date()
             });
 
-            // Procesar el mensaje según el flujo actual
-            let response;
-
-            // Si la conversación fue terminada por rechazo de privacidad
+            // Si la conversación fue terminada, no procesar más mensajes
             if (conversation.currentFlow === 'ended') {
                 logger.info('Intento de mensaje en conversación terminada:', {
                     phoneNumber,
@@ -86,15 +45,32 @@ class ConversationService {
                 return null;
             }
 
-            // Si no ha aceptado la privacidad, usar el flujo de privacidad
-            if (!conversation.hasAcceptedPrivacy) {
+            let response;
+
+            // Siempre empezar con el flujo de privacidad para nuevas conversaciones
+            if (!conversation.currentFlow || conversation.currentFlow === 'new') {
+                conversation.currentFlow = 'privacy';
+                conversation.currentStep = 'notice';
                 response = await this.flows.privacy.handleFlow(conversation, message);
-            } else if (!conversation.userData?.authenticated && conversation.currentFlow !== 'auth') {
-                // Si no está autenticado y no está en el flujo de autenticación, redirigir a autenticación
+            }
+            // Si no ha aceptado la privacidad, mantener en ese flujo
+            else if (!conversation.hasAcceptedPrivacy) {
+                response = await this.flows.privacy.handleFlow(conversation, message);
+            }
+            // Si aceptó la privacidad y es el primer mensaje después de aceptar
+            else if (conversation.hasAcceptedPrivacy && conversation.showWelcome) {
+                // Enviar mensaje personalizado de bienvenida
+                await this.whatsappService.sendTextMessage(
+                    phoneNumber,
+                    `🤓 ¡Hola! *${profileName || 'Usuario'}*, soy tu asistente virtual y me encanta estar aquí para ayudarte.\n¡Cuenta conmigo!`
+                );
+                conversation.showWelcome = false;
                 conversation.currentFlow = 'auth';
                 conversation.currentStep = 'inicio';
                 response = await this.flows.auth.handleFlow(conversation, message);
-            } else {
+            }
+            // Para el resto de los mensajes, procesar según el flujo actual
+            else {
                 response = await this.processFlow(conversation, message);
             }
 
@@ -110,7 +86,6 @@ class ConversationService {
                 phoneNumber
             });
 
-            // Intentar enviar mensaje de error al usuario
             try {
                 await this.whatsappService.sendTextMessage(
                     phoneNumber,
@@ -130,16 +105,14 @@ class ConversationService {
         if (!conversation) {
             conversation = new Conversation({
                 phoneNumber,
-                currentFlow: 'privacy',
-                currentStep: 'notice',
-                userData: { profileName },
-                hasAcceptedPrivacy: false,
-                messages: []
+                userName: profileName,
+                currentFlow: 'new',
+                currentStep: 'inicio',
+                showWelcome: true,
+                hasAcceptedPrivacy: false
             });
         }
 
-        // Actualizar última actividad
-        conversation.lastActivity = new Date();
         return conversation;
     }
 

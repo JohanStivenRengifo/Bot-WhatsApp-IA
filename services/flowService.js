@@ -1,133 +1,100 @@
 const logger = require('../utils/logger');
 const userService = require('./userService');
 const templateService = require('./templateService');
+const agentService = require('./agentService');
+const marketingService = require('./marketingService');
 
 class FlowService {
     constructor() {
+        this.whatsappService = require('./whatsappService');
         this.flows = new Map();
         this.initializeFlows();
+    }
+
+    async handleFlow(conversation, message) {
+        try {
+            // Si no hay flujo actual, iniciar con privacyFlow
+            if (!conversation.currentFlow) {
+                conversation.currentFlow = 'privacy';
+                conversation.currentStep = 'notice';
+                await conversation.save();
+            }
+
+            // Obtener el manejador del flujo actual
+            const flow = this.getFlowHandler(conversation.currentFlow);
+            if (!flow) {
+                logger.error('Flujo no encontrado:', conversation.currentFlow);
+                return null;
+            }
+
+            // Ejecutar el flujo actual
+            const result = await flow.handleFlow(conversation, message);
+
+            // Si el resultado indica cambio de flujo, actualizar y ejecutar el nuevo flujo
+            if (result && result.flow) {
+                conversation.currentFlow = result.flow;
+                if (result.step) {
+                    conversation.currentStep = result.step;
+                }
+                await conversation.save();
+
+                // Si el nuevo flujo es 'main', mostrar menú principal
+                if (result.flow === 'main') {
+                    const mainFlow = this.getFlowHandler('main');
+                    return await mainFlow.handleFlow(conversation, message);
+                }
+
+                // Ejecutar el nuevo flujo
+                const newFlow = this.getFlowHandler(result.flow);
+                if (newFlow) {
+                    return await newFlow.handleFlow(conversation, message);
+                }
+            }
+
+            return result;
+        } catch (error) {
+            logger.error('Error en handleFlow:', error);
+            throw error;
+        }
+    }
+
+    getFlowHandler(flowName) {
+        try {
+            // Si el flujo ya está inicializado, devolverlo
+            if (this.flows.has(flowName)) {
+                return this.flows.get(flowName);
+            }
+
+            // Cargar dinámicamente el flujo si existe
+            try {
+                const FlowClass = require(`../flows/${flowName}Flow.js`);
+                const flowInstance = new FlowClass(this.whatsappService);
+                this.flows.set(flowName, flowInstance);
+                return flowInstance;
+            } catch (error) {
+                logger.error(`Error cargando flujo ${flowName}:`, error);
+                return null;
+            }
+        } catch (error) {
+            logger.error('Error en getFlowHandler:', error);
+            return null;
+        }
     }
 
     /**
      * Inicializa los flujos de conversación
      */
     initializeFlows() {
-        // Flujo de bienvenida
-        this.flows.set('welcome', {
-            id: 'welcome',
-            name: 'Bienvenida',
-            steps: [
-                {
-                    id: 'greeting',
-                    type: 'template',
-                    template: 'welcome_message',
-                    next: 'main_menu'
-                },
-                {
-                    id: 'main_menu',
-                    type: 'interactive',
-                    content: {
-                        type: 'list',
-                        header: {
-                            type: 'text',
-                            text: 'Menú Principal'
-                        },
-                        body: {
-                            text: '¿En qué puedo ayudarte hoy?'
-                        },
-                        action: {
-                            button: 'Ver opciones',
-                            sections: [
-                                {
-                                    title: 'Servicios',
-                                    rows: [
-                                        { id: 'service_1', title: 'Servicio 1' },
-                                        { id: 'service_2', title: 'Servicio 2' }
-                                    ]
-                                },
-                                {
-                                    title: 'Soporte',
-                                    rows: [
-                                        { id: 'support', title: 'Contactar soporte' },
-                                        { id: 'faq', title: 'Preguntas frecuentes' }
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                }
-            ]
-        });
-
-        // Flujo de soporte
-        this.flows.set('support', {
-            id: 'support',
-            name: 'Soporte',
-            steps: [
-                {
-                    id: 'support_greeting',
-                    type: 'text',
-                    content: '¿Cómo podemos ayudarte? Por favor, describe tu problema.',
-                    next: 'support_response'
-                },
-                {
-                    id: 'support_response',
-                    type: 'text',
-                    content: 'Gracias por tu mensaje. Un agente te contactará pronto.',
-                    next: 'support_confirmation'
-                },
-                {
-                    id: 'support_confirmation',
-                    type: 'interactive',
-                    content: {
-                        type: 'button',
-                        body: {
-                            text: '¿Necesitas algo más?'
-                        },
-                        action: {
-                            buttons: [
-                                { id: 'yes', title: 'Sí' },
-                                { id: 'no', title: 'No' }
-                            ]
-                        }
-                    }
-                }
-            ]
-        });
-
-        // Flujo de FAQ
-        this.flows.set('faq', {
-            id: 'faq',
-            name: 'Preguntas Frecuentes',
-            steps: [
-                {
-                    id: 'faq_menu',
-                    type: 'interactive',
-                    content: {
-                        type: 'list',
-                        header: {
-                            type: 'text',
-                            text: 'Preguntas Frecuentes'
-                        },
-                        body: {
-                            text: 'Selecciona una pregunta para ver su respuesta:'
-                        },
-                        action: {
-                            button: 'Ver preguntas',
-                            sections: [
-                                {
-                                    title: 'Preguntas Generales',
-                                    rows: [
-                                        { id: 'faq_1', title: '¿Cómo funciona?' },
-                                        { id: 'faq_2', title: '¿Cuáles son los horarios?' }
-                                    ]
-                                }
-                            ]
-                        }
-                    }
-                }
-            ]
-        });
+        try {
+            // Pre-cargar los flujos principales
+            const mainFlows = ['privacy', 'auth', 'main', 'support', 'facturas', 'pagos'];
+            for (const flowName of mainFlows) {
+                this.getFlowHandler(flowName);
+            }
+        } catch (error) {
+            logger.error('Error inicializando flujos:', error);
+            throw error;
+        }
     }
 
     /**
@@ -204,6 +171,14 @@ class FlowService {
                 return null;
             }
 
+            // Manejar transferencia a agente
+            if (buttonId === 'yes_agent') {
+                const result = await agentService.transferToAgent(user._id, 'support');
+                if (result.success) {
+                    return await this.createStepResponse(currentStep.next, user);
+                }
+            }
+
             // Determinar el siguiente paso según el botón presionado
             const nextStep = this.getNextStep(flow, buttonId);
 
@@ -235,6 +210,15 @@ class FlowService {
             if (!currentStep || currentStep.type !== 'interactive') {
                 logger.warn('⚠️ Paso actual no es interactivo', { flowId: flow.id });
                 return null;
+            }
+
+            // Manejar opciones de marketing
+            if (listId === 'subscribe') {
+                await marketingService.sendCampaign(user._id, 'welcome');
+                return {
+                    type: 'text',
+                    content: '¡Gracias por suscribirte! Recibirás nuestras novedades.'
+                };
             }
 
             // Determinar el siguiente paso según la opción seleccionada
@@ -401,4 +385,4 @@ class FlowService {
     }
 }
 
-module.exports = new FlowService(); 
+module.exports = new FlowService();

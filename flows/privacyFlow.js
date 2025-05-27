@@ -1,5 +1,4 @@
 // flows/privacyFlow.js
-const whatsappService = require('../services/whatsappService');
 const logger = require('../utils/logger');
 
 class PrivacyFlow {
@@ -30,105 +29,73 @@ class PrivacyFlow {
     }
 
     async showPrivacyNotice(conversation) {
-        const interactive = {
-            type: 'button',
-            body: { text: '¿Aceptas nuestra política de privacidad?' },
-            action: {
-                buttons: [
-                    { type: 'reply', reply: { id: 'accept', title: 'Sí, acepto' } },
-                    { type: 'reply', reply: { id: 'reject', title: 'No acepto' } }
-                ]
-            }
-        };
-        await this.whatsappService.sendInteractiveMessage(conversation.phoneNumber, interactive);
+        try {
+            conversation.currentStep = 'waiting_response';
+
+            // En lugar de botones, enviamos instrucciones claras
+            const mensaje = 'Conecta2 Telecomunicaciones trata tus datos personales conforme a la Ley 1581 de 2012.\n\n' +
+                'Tus datos serán utilizados para:\n' +
+                '• Gestionar tu solicitud\n' +
+                '• Brindarte soporte técnico\n' +
+                '• Enviarte información relevante\n\n' +
+                'Para continuar, por favor responde "SI ACEPTO" o "NO ACEPTO".';
+
+            await this.whatsappService.sendTextMessage(
+                conversation.phoneNumber,
+                '🔒 Aviso de Privacidad\n\n' + mensaje
+            );
+            return null;
+        } catch (error) {
+            logger.error('Error mostrando aviso de privacidad:', error);
+            throw error;
+        }
     }
 
     async handlePrivacyResponse(conversation, message) {
         try {
-            // Validar que el mensaje sea del tipo correcto
-            if (!message || !message.type) {
-                logger.warn('Mensaje inválido recibido:', { message });
-                return await this.showPrivacyNotice(conversation);
-            }
-
-            // Manejar tanto mensajes directos de la API como mensajes procesados por el controlador
-            let buttonId = null;
-
-            if (message.type === 'interactive') {
-                // Formato directo de la API de WhatsApp
-                if (message.interactive?.button_reply) {
-                    buttonId = message.interactive.button_reply.id;
-                    // Asegurar que el mensaje tenga un campo content
-                    if (!message.content) {
-                        message.content = message.interactive.button_reply.title || '';
-                    }
-                }
-                // Formato procesado por el controlador
-                else if (message.id) {
-                    buttonId = message.id;
-                    // Asegurar que el mensaje tenga un campo content
-                    if (!message.content) {
-                        message.content = message.title || '';
-                    }
-                }
-            }
-
-            if (buttonId === 'accept') {
-                // Actualizar el estado de la conversación
+            // Si es un mensaje de texto que dice "SI ACEPTO"
+            if (message.type === 'text' && message.text.toUpperCase().trim() === 'SI ACEPTO') {
                 conversation.hasAcceptedPrivacy = true;
                 conversation.acceptedPrivacyAt = new Date().toISOString();
-
-                // Enviar mensaje de confirmación
-                await this.whatsappService.sendTextMessage(
-                    conversation.phoneNumber,
-                    '✅ Gracias por aceptar nuestra política de privacidad.'
-                );
-
-                // Redirigir al flujo de autenticación en lugar del flujo principal
                 conversation.currentFlow = 'auth';
                 conversation.currentStep = 'inicio';
-                return { flow: 'auth' };
+                await conversation.save();
 
-            } else if (buttonId === 'reject') {
-                // Enviar mensaje de despedida
+                // Enviar mensaje de bienvenida personalizado una sola vez
+                await this.whatsappService.sendTextMessage(
+                    conversation.phoneNumber,
+                    `🤓 ¡Hola! *${conversation.userName || 'Usuario'}*, soy tu asistente virtual y me encanta estar aquí para ayudarte.\n¡Cuenta conmigo!`
+                );
+
+                return { flow: 'auth', step: 'inicio' };
+
+            } else if (message.type === 'text' && message.text.toUpperCase().trim() === 'NO ACEPTO') {
                 await this.whatsappService.sendTextMessage(
                     conversation.phoneNumber,
                     'Lo sentimos, pero necesitamos tu aceptación de la política de privacidad para continuar. ' +
                     'Si cambias de opinión, puedes escribirnos nuevamente. ¡Que tengas un excelente día! 👋'
                 );
 
-                // Finalizar la conversación
                 conversation.currentFlow = 'ended';
                 conversation.currentStep = 'privacy_rejected';
                 conversation.endedAt = new Date().toISOString();
+                await conversation.save();
                 return null;
             }
 
-            // Si la respuesta no es válida, mostrar el aviso nuevamente
-            logger.warn('Respuesta inválida recibida:', {
-                messageType: message.type,
-                buttonId: buttonId,
-                messageId: message.id,
-                messageContent: message.content,
-                messageTitle: message.title,
-                messageInteractive: message.interactive,
-                messageStructure: JSON.stringify(message)
-            });
-            return await this.showPrivacyNotice(conversation);
+            // Si el mensaje no coincide con ninguna opción válida
+            await this.whatsappService.sendTextMessage(
+                conversation.phoneNumber,
+                'Por favor, responde exactamente "SI ACEPTO" o "NO ACEPTO" para continuar.'
+            );
+            return null;
 
         } catch (error) {
             logger.error('Error procesando respuesta de privacidad:', {
                 error: error.message,
-                stack: error.stack,
                 phoneNumber: conversation.phoneNumber,
-                messageType: message?.type,
-                messageId: message?.id,
-                messageContent: message?.content,
-                messageTitle: message?.title,
-                messageInteractive: message?.interactive,
-                messageStructure: message ? JSON.stringify(message) : 'null'
+                message: message
             });
-            await this.handleFlowError(conversation, error);
             throw error;
         }
     }
@@ -139,16 +106,10 @@ class PrivacyFlow {
                 conversation.phoneNumber,
                 'Lo siento, ha ocurrido un error. Por favor, intenta nuevamente en unos momentos.'
             );
-
-            // Registrar el error en la conversación
-            conversation.lastError = {
-                message: error.message,
-                timestamp: new Date().toISOString()
-            };
         } catch (secondaryError) {
             logger.error('Error en el manejador de errores:', {
                 originalError: error,
-                secondaryError: secondaryError
+                secondaryError
             });
         }
     }

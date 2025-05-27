@@ -1,11 +1,12 @@
 // flows/pagosFlow.js
-const wisphubService = require('../services/wisphubService');
+const WisphubService = require('../services/wisphubService');
 const { formatCurrency } = require('../utils/botUtils');
 const logger = require('../utils/logger');
 
 class PagosFlow {
     constructor(whatsappService) {
         this.whatsappService = whatsappService;
+        this.wisphubService = new WisphubService();
     }
 
     async handleFlow(conversation, message) {
@@ -27,7 +28,7 @@ class PagosFlow {
 
     async handleInicio(conversation) {
         try {
-            const facturas = await wisphubService.getFacturasCliente(
+            const facturas = await this.wisphubService.getFacturasCliente(
                 conversation.userData.id,
                 { status: 'unpaid' }
             );
@@ -150,7 +151,7 @@ class PagosFlow {
         if (option === 'confirmar_pago') {
             try {
                 const pagoInfo = conversation.userData.pagoTemp;
-                await wisphubService.registrarPago(conversation.userData.id, {
+                await this.wisphubService.registrarPago(conversation.userData.id, {
                     amount: pagoInfo.montoAPagar,
                     invoice_ids: [pagoInfo.facturaId],
                     payment_method: 'other',

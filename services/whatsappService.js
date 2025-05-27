@@ -18,33 +18,70 @@ class WhatsappService {
         if (!body || typeof body !== 'string' || !body.trim()) {
             throw new Error('El mensaje de texto no puede estar vacío');
         }
-        const data = {
-            messaging_product: 'whatsapp',
-            to,
-            type: 'text',
-            text: { body }
-        };
-        return metaApiService.sendMessage(data);
+        return metaApiService.sendTextMessage(to, body);
     }
 
     /**
      * Envía un mensaje interactivo con botones
      * @param {string} to - Número de teléfono del destinatario
-     * @param {Object} interactive - Objeto que representa el mensaje interactivo
+     * @param {string} header - Encabezado del mensaje
+     * @param {string} body - Cuerpo del mensaje
+     * @param {Array<Object>} buttons - Array de botones
      * @returns {Promise<Object>} - Respuesta de la API
      */
-    async sendInteractiveMessage(to, interactive) {
-        // Validar estructura mínima
-        if (!interactive || !interactive.type || !interactive.body) {
-            throw new Error('Mensaje interactivo mal formado');
+    async sendInteractiveMessage(to, header, body, buttons) {
+        try {
+            if (!header || !body || !buttons || !Array.isArray(buttons)) {
+                throw new Error('Se requieren header, body y buttons (array)');
+            }
+
+            const formattedNumber = BotUtils.formatPhoneNumber(to);
+            const messageData = {
+                messaging_product: 'whatsapp',
+                to: formattedNumber,
+                type: 'interactive',
+                interactive: {
+                    type: 'button',
+                    header: {
+                        type: 'text',
+                        text: header
+                    },
+                    body: {
+                        text: body
+                    },
+                    action: {
+                        buttons: buttons.map(button => ({
+                            type: 'reply',
+                            reply: {
+                                id: button.reply.id,
+                                title: button.reply.title
+                            }
+                        }))
+                    }
+                }
+            };
+
+            logger.info('📤 Enviando mensaje interactivo', {
+                to: formattedNumber,
+                type: 'button'
+            });
+
+            const response = await this.metaApiService.sendInteractiveMessage(formattedNumber, messageData);
+
+            logger.info('✅ Mensaje interactivo enviado exitosamente', {
+                to: formattedNumber,
+                messageId: response?.messages?.[0]?.id || 'No ID'
+            });
+
+            return response;
+        } catch (error) {
+            logger.error('❌ Error enviando mensaje interactivo', {
+                to,
+                error: error.message,
+                stack: error.stack
+            });
+            throw error;
         }
-        const data = {
-            messaging_product: 'whatsapp',
-            to,
-            type: 'interactive',
-            interactive
-        };
-        return metaApiService.sendMessage(data);
     }
 
     /**

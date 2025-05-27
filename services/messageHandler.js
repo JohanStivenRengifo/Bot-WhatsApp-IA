@@ -5,6 +5,10 @@ const userService = require('./userService');
 const templateService = require('./templateService');
 
 class MessageHandler {
+    constructor() {
+        this.flowService = flowService;
+    }
+
     /**
      * Maneja un mensaje de texto
      * @param {Object} message - Objeto del mensaje
@@ -351,6 +355,68 @@ class MessageHandler {
             : `He recibido tus ${count} contactos.`;
         await metaApiService.sendTextMessage(to, message);
     }
+
+    /**
+     * Maneja un mensaje
+     * @param {Object} message - Objeto del mensaje
+     * @param {Object} contact - Información del contacto
+     */
+    async handleMessage(message, contact) {
+        try {
+            const phoneNumber = message.from;
+
+            // Obtener o crear la conversación
+            let conversation = await this.getOrCreateConversation(phoneNumber, contact);
+
+            // Procesar el mensaje a través del flujo correspondiente
+            const result = await this.flowService.handleFlow(conversation, message);
+
+            if (result && result.error) {
+                logger.error('Error en el flujo:', result.error);
+                await this.handleError(phoneNumber, result.error);
+            }
+
+        } catch (error) {
+            logger.error('Error procesando mensaje:', {
+                error: error.message,
+                stack: error.stack,
+                phoneNumber: message.from
+            });
+            await this.handleError(message.from, error);
+        }
+    }
+
+    /**
+     * Obtiene o crea una conversación
+     * @param {string} phoneNumber - Número de teléfono
+     * @param {Object} contact - Información del contacto
+     * @returns {Promise<Object>} Conversación
+     */
+    async getOrCreateConversation(phoneNumber, contact) {
+        try {
+            let conversation = await Conversation.findOne({ phoneNumber });
+
+            if (!conversation) {
+                conversation = new Conversation({
+                    phoneNumber,
+                    userName: contact.name || 'Usuario',
+                    currentFlow: 'privacy',
+                    currentStep: 'notice',
+                    messages: [],
+                    userData: {}
+                });
+            }
+
+            // Actualizar última actividad
+            conversation.lastActivity = new Date();
+            await conversation.save();
+
+            return conversation;
+        } catch (error) {
+            logger.error('Error obteniendo conversación:', error);
+            throw error;
+        }
+    }
 }
 
-module.exports = new MessageHandler(); 
+module.exports = new MessageHandler();

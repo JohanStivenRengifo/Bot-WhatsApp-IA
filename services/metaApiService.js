@@ -122,12 +122,11 @@ class MetaApiService {
                 messaging_product: 'whatsapp',
                 to: to,
                 type: 'interactive',
-                interactive: {
-                    type: messageData.type,
+                interactive: messageData.interactive || {
+                    type: 'button',
                     header: messageData.header,
                     body: messageData.body,
-                    action: messageData.action,
-                    footer: messageData.footer
+                    action: messageData.action
                 }
             };
 
@@ -235,26 +234,36 @@ class MetaApiService {
             const webhookUrl = config.app.webhookUrl;
             const verifyToken = config.meta.verifyToken;
 
-            const data = {
-                url: webhookUrl,
-                verify_token: verifyToken,
-                fields: config.meta.webhookFields
-            };
-
             logger.info('🔄 Configurando webhook de WhatsApp', {
-                url: webhookUrl
+                url: webhookUrl,
+                businessAccountId: this.businessAccountId
             });
 
-            const response = await this.makeRequest('POST', `${this.businessAccountId}/webhooks`, data);
+            // Validamos que el businessAccountId sea válido
+            if (!this.businessAccountId || this.businessAccountId === 'your-business-account-id') {
+                throw new Error('El ID de la cuenta de negocio no está configurado correctamente');
+            }
+
+            // Configuramos el webhook usando la ruta correcta
+            const response = await this.makeRequest(
+                'POST',
+                `${this.businessAccountId}/subscribed_apps`,
+                {
+                    subscribed_fields: config.meta.webhookFields,
+                    verify_token: verifyToken,
+                    callback_url: webhookUrl
+                }
+            );
 
             logger.info('✅ Webhook configurado exitosamente', {
-                webhookId: response.id
+                response: response
             });
 
             return response;
         } catch (error) {
             logger.error('❌ Error configurando webhook', {
-                error: error.message
+                error: error.message,
+                businessAccountId: this.businessAccountId
             });
             throw error;
         }

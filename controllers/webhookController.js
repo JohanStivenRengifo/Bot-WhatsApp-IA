@@ -51,15 +51,69 @@ class WebhookController {
             // Normaliza el mensaje recibido
             let normalizedMessage;
             if (message.type === 'text') {
-                normalizedMessage = { type: 'text', body: message.text.body };
+                normalizedMessage = {
+                    from,
+                    content: {
+                        type: 'text',
+                        text: message.text.body,
+                        body: message.text.body
+                    },
+                    timestamp: message.timestamp
+                };
             } else if (message.type === 'interactive') {
-                // Normaliza según el tipo de interacción
-                // ...
+                if (message.interactive && message.interactive.type === 'button_reply') {
+                    normalizedMessage = {
+                        from,
+                        content: {
+                            type: 'interactive',
+                            text: message.interactive.button_reply.title,
+                            id: message.interactive.button_reply.id
+                        },
+                        timestamp: message.timestamp
+                    };
+                } else if (message.interactive && message.interactive.type === 'list_reply') {
+                    normalizedMessage = {
+                        from,
+                        content: {
+                            type: 'interactive',
+                            text: message.interactive.list_reply.title,
+                            id: message.interactive.list_reply.id
+                        },
+                        timestamp: message.timestamp
+                    };
+                } else {
+                    normalizedMessage = {
+                        from,
+                        content: {
+                            type: 'interactive',
+                            text: '',
+                            id: ''
+                        },
+                        timestamp: message.timestamp
+                    };
+                }
             } else {
-                normalizedMessage = { type: message.type, body: '' };
+                // Otros tipos de mensaje
+                normalizedMessage = {
+                    from,
+                    content: {
+                        type: message.type,
+                        text: '',
+                        id: ''
+                    },
+                    timestamp: message.timestamp
+                };
             }
 
-            await conversationService.processMessage(from, normalizedMessage, profileName);
+            // Procesa el mensaje y responde
+            const response = await conversationService.processMessage(from, normalizedMessage.content, profileName);
+            if (response && response.type === 'text' && response.body) {
+                await whatsappService.sendTextMessage(from, response.body);
+            } else if (response && response.type === 'interactive' && response.interactive) {
+                await whatsappService.sendInteractiveMessage(from, response.interactive);
+            } else if (response && response.body) {
+                await whatsappService.sendTextMessage(from, response.body);
+            }
         } catch (error) {
             logger.error('Error en webhook:', { error: error.message });
         }

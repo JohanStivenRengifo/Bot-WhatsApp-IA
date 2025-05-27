@@ -1,11 +1,12 @@
 // flows/supportFlow.js
 const { BotUtils } = require('../utils/botUtils');
+const WisphubService = require('../services/wisphubService');
 
 class SupportFlow {
     constructor(whatsappService) {
         this.whatsappService = whatsappService;
         this.handoverService = require('../services/handoverService');
-        this.wisphubService = require('../services/wisphubService');
+        this.wisphubService = new WisphubService();
     }
 
     async handleFlow(conversation, message) {
@@ -92,35 +93,39 @@ class SupportFlow {
     }
 
     async handleInicio(conversation) {
-        const buttons = [
-            {
-                type: 'reply',
-                reply: {
-                    id: 'technical',
-                    title: '🔧 Soporte Técnico'
-                }
-            },
-            {
-                type: 'reply',
-                reply: {
-                    id: 'billing',
-                    title: '💰 Facturación'
-                }
-            },
-            {
-                type: 'reply',
-                reply: {
-                    id: 'human_agent',
-                    title: '👨‍💼 Hablar con Agente'
-                }
+        const interactive = {
+            type: 'button',
+            body: { text: '¿En qué podemos ayudarte hoy?' },
+            action: {
+                buttons: [
+                    {
+                        type: 'reply',
+                        reply: {
+                            id: 'technical',
+                            title: '🔧 Soporte Técnico'
+                        }
+                    },
+                    {
+                        type: 'reply',
+                        reply: {
+                            id: 'billing',
+                            title: '💰 Facturación'
+                        }
+                    },
+                    {
+                        type: 'reply',
+                        reply: {
+                            id: 'human_agent',
+                            title: '👨‍💼 Hablar con Agente'
+                        }
+                    }
+                ]
             }
-        ];
+        };
 
         await this.whatsappService.sendInteractiveMessage(
             conversation.phoneNumber,
-            'Centro de Soporte',
-            '¿En qué podemos ayudarte hoy?',
-            buttons
+            interactive
         );
 
         conversation.currentStep = 'tipo_problema';
@@ -128,7 +133,7 @@ class SupportFlow {
     }
 
     async handleTipoProblema(conversation, message) {
-        if (!message.type === 'interactive' || !message.interactive?.button_reply?.id) {
+        if (message.type !== 'interactive' || !message.interactive?.button_reply?.id) {
             return this.handleInicio(conversation);
         }
 
