@@ -1,0 +1,16 @@
+{
+    "compilerOptions": {
+    "target": "ES2020",                  // Usa características modernas de JS
+    "module": "commonjs",                // Compatible con Node.js
+    "rootDir": "src",                    // Carpeta de entrada
+    "outDir": "dist",                    // Carpeta de salida al compilar
+    "esModuleInterop": true,             // Permite importar módulos comunes (como Express)
+    "strict": true,                      // Activa reglas estrictas
+    "skipLibCheck": true,                // Evita revisar archivos de definición
+    "forceConsistentCasingInFileNames": true,
+    "typeRoots": ["./node_modules/@types", "./@types"]
+ // Soporte para tipos personalizados
+},
+  "include": ["src"],                    // Archivos a compilar
+  "exclude": ["node_modules", "dist"]   // Carpetas a ignorar
+}
