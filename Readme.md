@@ -1,390 +1,273 @@
-# 🌐 Bot WhatsApp Conecta2 Telecomunicaciones
+# Conecta2 WhatsApp Bot
 
-Bot inteligente de WhatsApp para atención al cliente de Conecta2 Telecomunicaciones SAS, desarrollado con TypeScript e integrado con Meta API, WispHub y CRM.
+## Descripción General
 
-## 🚀 Características Principales
+El Conecta2 WhatsApp Bot es una solución de atención al cliente automatizada para Conecta2 Telecomunicaciones SAS, que permite a los usuarios interactuar con la empresa a través de WhatsApp. El bot proporciona una variedad de servicios, desde consultas de facturas hasta soporte técnico, utilizando la API de WhatsApp Business de Meta.
 
-### ✅ Funcionalidades Implementadas
+## Características Principales
 
-- **Aceptación de Políticas de Privacidad** - Cumplimiento GDPR/Ley 1581 de 2012
-- **Ping a IP (Mikrotik)** - Verificación de conectividad en tiempo real
-- **Consulta y Envío de Facturas** - Gestión completa de facturación
-- **Notificaciones Automáticas** - Alertas por corte o vencimiento
-- **Creación de Tickets** - Integración directa con CRM
-- **Soporte en Línea** - Envío de documentos y comprobantes
-- **Cambio de Contraseña** - Autogestión de credenciales
-- **Consulta de Deuda** - Estado de cuenta en tiempo real
-- **Ubicación de Puntos de Pago** - Información geolocalizada
-- **Mejora de Plan** - Proceso automatizado de upgrade
-- **IA Conversacional** - Respuestas inteligentes con OpenAI
+- **Aceptación de Política de Privacidad**: Solicita y registra el consentimiento del usuario para el tratamiento de datos personales.
+- **Autenticación de Usuario**: Verifica la identidad del usuario mediante su número de documento.
+- **Diagnóstico de Conexión**: Realiza pruebas de ping a la IP del cliente para verificar el estado de su conexión.
+- **Gestión de Facturas**: Consulta y envía facturas, incluyendo documentos PDF.
+- **Notificaciones Automáticas**: Alerta sobre vencimientos de facturas y mantenimientos programados.
+- **Sistema de Tickets**: Crea y gestiona tickets de soporte técnico integrados con el CRM.
+- **Cambio de Contraseña**: Permite a los usuarios actualizar sus credenciales de forma segura.
+- **Información de Pagos**: Proporciona detalles sobre deudas pendientes y ubicaciones de puntos de pago.
+- **Mejora de Plan**: Muestra opciones disponibles para actualizar el plan de servicio.
+- **Respuestas Inteligentes**: Utiliza IA para procesar consultas en lenguaje natural y proporcionar respuestas relevantes.
 
-### 🔧 Integraciones
+## Arquitectura del Sistema
 
-- **Meta WhatsApp Business API** - Comunicación bidireccional
-- **WispHub API** - Gestión de servicios ISP
-- **CRM Integration** - Ticketing y seguimiento
-- **Mikrotik RouterOS** - Diagnósticos de red
-- **OpenAI GPT** - Procesamiento de lenguaje natural
-- **PostgreSQL** - Base de datos robusta
+El bot está construido con una arquitectura modular que facilita su mantenimiento y escalabilidad:
 
-## 📋 Requisitos del Sistema
+### Estructura de Directorios
 
-- **Node.js** >= 18.0.0
-- **PostgreSQL** >= 12
-- **Docker** (opcional)
-- **SSL Certificate** (producción)
+```
+src/
+├── config/           # Configuración y variables de entorno
+├── controllers/      # Lógica de negocio y manejo de mensajes
+├── interfaces/       # Definiciones de tipos TypeScript
+├── middlewares/      # Middlewares de Express
+├── routes/           # Rutas de la API
+├── services/         # Servicios para integraciones externas
+├── utils/            # Funciones de utilidad
+└── index.ts          # Punto de entrada de la aplicación
+```
 
-## 🛠️ Instalación
+### Componentes Principales
 
-### Método 1: Instalación Manual
+1. **WebhookController**: Maneja las solicitudes entrantes de la API de WhatsApp.
+2. **MessageHandler**: Procesa los mensajes de los usuarios y coordina las respuestas.
+3. **NotificationController**: Gestiona las notificaciones automáticas programadas.
+4. **Servicios Especializados**:
+   - **MessageService**: Envío de mensajes a través de la API de WhatsApp.
+   - **CustomerService**: Interacción con la API de WispHub para datos de clientes.
+   - **TicketService**: Gestión de tickets de soporte en el CRM.
+   - **PaymentService**: Información sobre pagos y facturas.
+   - **AIService**: Integración con OpenAI para respuestas inteligentes.
+
+## Flujo de Trabajo
+
+1. **Inicio de Conversación**:
+   - El usuario envía un mensaje al número de WhatsApp de la empresa.
+   - El bot verifica si el usuario ha aceptado la política de privacidad.
+   - Si es la primera interacción, solicita aceptación de la política.
+
+2. **Autenticación**:
+   - Una vez aceptada la política, solicita el número de documento para autenticar.
+   - Verifica la identidad del usuario contra la base de datos de WispHub.
+
+3. **Menú Principal**:
+   - Después de la autenticación, el usuario puede acceder al menú principal.
+   - Desde aquí, puede seleccionar diferentes opciones de servicio.
+
+4. **Servicios Disponibles**:
+   - Test de conexión (ping)
+   - Consulta de facturas
+   - Creación de tickets de soporte
+   - Cambio de contraseña
+   - Consulta de deuda
+   - Información de puntos de pago
+   - Mejora de plan
+
+5. **Notificaciones Automáticas**:
+   - El sistema verifica periódicamente facturas vencidas y mantenimientos programados.
+   - Envía notificaciones proactivas a los usuarios afectados.
+
+## Requisitos Técnicos
+
+- **Node.js**: v14.0.0 o superior
+- **TypeScript**: v4.5.0 o superior
+- **Express**: Framework web para la API
+- **Axios**: Cliente HTTP para integraciones externas
+- **Dotenv**: Gestión de variables de entorno
+- **Moment.js**: Manipulación de fechas
+- **Ping**: Utilidad para pruebas de conectividad
+
+## Integraciones
+
+El bot se integra con tres sistemas externos principales:
+
+1. **Meta WhatsApp Business API**:
+   - Envío y recepción de mensajes de WhatsApp
+   - Gestión de mensajes interactivos (botones, listas)
+   - Envío de documentos y ubicaciones
+
+2. **WispHub API**:
+   - Autenticación de clientes
+   - Consulta de información de servicio
+   - Gestión de facturas y pagos
+   - Información de planes y upgrades
+
+3. **CRM API**:
+   - Creación y seguimiento de tickets de soporte
+   - Notificaciones de actualizaciones de tickets
+
+4. **OpenAI API**:
+   - Procesamiento de lenguaje natural
+   - Generación de respuestas inteligentes
+
+## Configuración y Despliegue
+
+### Variables de Entorno
+
+Crea un archivo `.env` en la raíz del proyecto con las siguientes variables:
+
+```
+# Meta WhatsApp API
+META_ACCESS_TOKEN=tu_token_de_acceso
+WEBHOOK_VERIFY_TOKEN=tu_token_de_verificacion
+PHONE_NUMBER_ID=tu_id_de_telefono
+
+# WispHub API
+WISPHUB_API_URL=https://api.wisphub.ejemplo.com
+WISPHUB_API_KEY=tu_clave_api_wisphub
+
+# CRM API
+CRM_API_URL=https://crm.ejemplo.com/api
+CRM_API_KEY=tu_clave_api_crm
+
+# OpenAI API
+OPENAI_API_KEY=tu_clave_api_openai
+
+# Server
+PORT=3000
+```
+
+### Instalación
+
+1. Clona el repositorio:
+   ```bash
+   git clone https://github.com/conecta2/whatsapp-bot.git
+   cd whatsapp-bot
+   ```
+
+2. Instala las dependencias:
+   ```bash
+   npm install
+   ```
+
+3. Compila el código TypeScript:
+   ```bash
+   npm run build
+   ```
+
+### Ejecución
+
+#### Desarrollo
 
 ```bash
-# Clonar repositorio
-git clone https://github.com/conecta2/whatsapp-bot.git
-cd whatsapp-bot
+npm run dev
+```
 
-# Instalar dependencias
-npm install
+#### Producción
 
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
-
-# Construir aplicación
-npm run build
-
-# Iniciar base de datos
-psql -U postgres -c "CREATE DATABASE conecta2_bot;"
-
-# Ejecutar migraciones
-npm run migrate
-
-# Iniciar aplicación
+```bash
 npm start
 ```
 
-### Método 2: Docker Compose (Recomendado)
+### Configuración de Webhook
 
-```bash
-# Clonar repositorio
-git clone https://github.com/conecta2/whatsapp-bot.git
-cd whatsapp-bot
+1. Inicia el servidor en un entorno accesible desde Internet (o utiliza ngrok para desarrollo).
+2. Configura el webhook en el panel de desarrolladores de Meta:
+   - URL: `https://tu-dominio.com/webhook`
+   - Token de verificación: El mismo valor que configuraste en `WEBHOOK_VERIFY_TOKEN`
+   - Suscríbete a los eventos de mensajes de WhatsApp.
 
-# Configurar variables de entorno
-cp .env.example .env
-# Editar .env con tus credenciales
+### Despliegue en Producción
 
-# Levantar todos los servicios
-docker-compose up -d
+#### Usando PM2
 
-# Verificar estado
-docker-compose ps
-```
-
-## ⚙️ Configuración
-
-### 1. Meta WhatsApp Business API
-
-1. Crear aplicación en [Meta for Developers](https://developers.facebook.com/)
-2. Configurar WhatsApp Business API
-3. Obtener tokens y phone number ID
-4. Configurar webhook URL: `https://tu-dominio.com/webhook`
-
-### 2. Variables de Entorno
-
-```bash
-# WhatsApp Business API
-WHATSAPP_ACCESS_TOKEN=tu_token_permanente
-WHATSAPP_PHONE_NUMBER_ID=123456789012345
-WHATSAPP_WEBHOOK_VERIFY_TOKEN=token_verificacion_seguro
-META_APP_SECRET=secret_de_tu_app
-
-# Base de Datos
-DB_HOST=localhost
-DB_NAME=conecta2_bot
-DB_USER=conecta2
-DB_PASSWORD=password_seguro
-
-# APIs Externas
-WISPHUB_API_KEY=tu_wisphub_key
-CRM_API_KEY=tu_crm_key
-OPENAI_API_KEY=sk-tu_openai_key
-
-# Mikrotik
-MIKROTIK_HOST=192.168.1.1
-MIKROTIK_USERNAME=admin
-MIKROTIK_PASSWORD=mikrotik_password
-```
-
-### 3. Configuración del Webhook
-
-En Meta for Developers:
-- **Webhook URL**: `https://tu-dominio.com/webhook`
-- **Verify Token**: El mismo que configuraste en `WHATSAPP_WEBHOOK_VERIFY_TOKEN`
-- **Campos**: `messages`
-
-## 🎯 Uso del Bot
-
-### Flujo de Conversación
-
-1. **Bienvenida y Privacidad**
-   ```
-   Usuario: Hola
-   Bot: Bienvenido a Conecta2. ¿Aceptas el tratamiento de datos?
-   Usuario: Acepto
-   Bot: [Muestra menú principal]
+1. Instala PM2 globalmente:
+   ```bash
+   npm install -g pm2
    ```
 
-2. **Menú Principal**
-   - 📡 Verificar Conexión
-   - 📄 Consultar Factura
-   - 💰 Consultar Deuda
-   - 🔒 Cambiar Contraseña
-   - 🎫 Crear Ticket
-   - ⬆️ Mejorar Plan
-   - 👨‍💼 Hablar con Agente
-
-3. **Respuestas Inteligentes**
-   ```
-   Usuario: Mi internet está lento
-   Bot: Te ayudo a diagnosticar. ¿Quieres que verifique tu conexión?
-   [Ejecuta ping automáticamente]
+2. Inicia la aplicación con PM2:
+   ```bash
+   pm2 start dist/index.js --name whatsapp-bot
    ```
 
-### Comandos Especiales
+3. Configura el inicio automático:
+   ```bash
+   pm2 startup
+   pm2 save
+   ```
 
-- `menu` - Mostrar menú principal
-- `ayuda` - Obtener ayuda
-- `agente` - Solicitar soporte humano
-- `facturas` - Ver facturas pendientes
-- `deuda` - Consultar saldo
-- `puntos de pago` - Ubicaciones de pago
+#### Usando Docker
 
-## 🔧 API Endpoints
+1. Construye la imagen Docker:
+   ```bash
+   docker build -t conecta2/whatsapp-bot .
+   ```
 
-### Webhook Principal
-```http
-POST /webhook
-Content-Type: application/json
-X-Hub-Signature-256: sha256=signature
+2. Ejecuta el contenedor:
+   ```bash
+   docker run -d -p 3000:3000 --env-file .env --name whatsapp-bot conecta2/whatsapp-bot
+   ```
 
-# Recibe mensajes de WhatsApp
-```
+## Monitoreo y Mantenimiento
 
-### Salud del Sistema
-```http
-GET /health
-Response: {
-  "status": "healthy",
-  "timestamp": "2024-01-15T10:30:00Z",
-  "active_conversations": 25,
-  "uptime": 86400
-}
-```
+### Logs
 
-### Estadísticas
-```http
-GET /stats
-Response: {
-  "total_customers": 1500,
-  "active_conversations": 25,
-  "pending_invoices": 120
-}
-```
+- Los logs de la aplicación se escriben en la consola estándar.
+- Si utilizas PM2, puedes ver los logs con:
+  ```bash
+  pm2 logs whatsapp-bot
+  ```
 
-### Notificaciones Manuales
-```http
-POST /trigger-notifications
-# Envía notificaciones pendientes
-```
+### Verificación de Estado
 
-### Broadcast
-```http
-POST /broadcast
-Content-Type: application/json
+- Endpoint de verificación de estado: `GET /health`
+- Devuelve información sobre el estado actual del servicio.
 
-{
-  "message": "Mantenimiento programado esta noche",
-  "target_group": "active"
-}
-```
+## Seguridad
 
-## 📊 Monitoreo y Logging
+- Todas las comunicaciones utilizan HTTPS.
+- Las credenciales de API se almacenan en variables de entorno.
+- La autenticación de usuarios se realiza mediante documento de identidad.
+- Se requiere aceptación explícita de la política de privacidad.
 
-### Logs del Sistema
-```bash
-# Ver logs en tiempo real
-docker-compose logs -f whatsapp-bot
+## Extensibilidad
 
-# Logs específicos
-tail -f logs/conecta2-bot.log
-```
+El diseño modular facilita la adición de nuevas características:
 
-### Métricas (Prometheus/Grafana)
-- Mensajes procesados por minuto
-- Tiempo de respuesta promedio
-- Errores por endpoint
-- Conversaciones activas
-- Estado de integraciones
+1. Para agregar un nuevo comando:
+   - Actualiza el método `handleMainCommands` en `MessageHandler.ts`
+   - Implementa el método correspondiente para manejar la lógica
 
-### Alertas Configuradas
-- Caída del servicio
-- Alto tiempo de respuesta
-- Errores en integraciones
-- Uso excesivo de memoria
+2. Para integrar con un nuevo servicio externo:
+   - Crea un nuevo archivo en el directorio `services/`
+   - Exporta la clase desde `services/index.ts`
+   - Inyecta el servicio donde sea necesario
 
-## 🔒 Seguridad
-
-### Medidas Implementadas
-
-1. **Verificación de Webhook**
-   - Validación de firma HMAC
-   - Token de verificación seguro
-
-2. **Rate Limiting**
-   - 50 requests por minuto por usuario
-   - Protección contra spam
-
-3. **Sanitización de Datos**
-   - Validación de entrada
-   - Escape de caracteres especiales
-
-4. **Encriptación**
-   - Datos sensibles encriptados
-   - Conexiones HTTPS únicamente
-
-5. **Autenticación de APIs**
-   - Tokens JWT para APIs externas
-   - Rotación periódica de tokens
-
-## 📈 Performance
-
-### Optimizaciones
-
-- **Conexión a BD con Pool** - Reutilización de conexiones
-- **Cache en Redis** - Respuestas frecuentes cacheadas
-- **Rate Limiting** - Prevención de sobrecarga
-- **Compresión GZIP** - Reducción de ancho de banda
-- **CDN para Assets** - Entrega rápida de documentos
-
-### Métricas Objetivo
-
-- **Tiempo de respuesta**: < 2 segundos
-- **Disponibilidad**: 99.9%
-- **Throughput**: 1000 mensajes/minuto
-- **Concurrencia**: 100 conversaciones simultáneas
-
-## 🧪 Testing
-
-```bash
-# Ejecutar tests unitarios
-npm test
-
-# Tests de integración
-npm run test:integration
-
-# Coverage
-npm run test:coverage
-
-# Tests E2E
-npm run test:e2e
-```
-
-### Casos de Prueba
-
-1. **Funcionalidades Básicas**
-   - Envío y recepción de mensajes
-   - Menú interactivo
-   - Respuestas de IA
-
-2. **Integraciones**
-   - Conexión a WispHub
-   - Creación de tickets en CRM
-   - Ping a Mikrotik
-
-3. **Flujos Completos**
-   - Registro de nuevo cliente
-   - Consulta de factura
-   - Cambio de contraseña
-
-## 🚨 Troubleshooting
+## Solución de Problemas
 
 ### Problemas Comunes
 
-1. **Bot no responde**
-   ```bash
-   # Verificar webhook
-   curl -X GET "https://tu-dominio.com/health"
-   
-   # Revisar logs
-   docker-compose logs whatsapp-bot
-   ```
+1. **Webhook no se verifica**:
+   - Verifica que la URL sea accesible públicamente.
+   - Confirma que el token de verificación coincida.
+   - Asegúrate de que la ruta sea exactamente `/webhook`.
 
-2. **Error de Base de Datos**
-   ```bash
-   # Verificar conexión
-   docker-compose exec postgres psql -U conecta2 -d conecta2_bot
-   
-   # Reiniciar servicio
-   docker-compose restart postgres
-   ```
+2. **Mensajes no se envían**:
+   - Verifica el `META_ACCESS_TOKEN` y `PHONE_NUMBER_ID`.
+   - Confirma que el número de teléfono esté aprobado en WhatsApp Business.
+   - Revisa los logs para errores específicos de la API.
 
-3. **Timeout en APIs**
-   ```bash
-   # Verificar conectividad
-   curl -v https://api.wisphub.net/v1/health
-   
-   # Aumentar timeout en config
-   ```
+3. **Integraciones externas fallan**:
+   - Verifica las credenciales de API.
+   - Confirma que las URLs de los servicios sean correctas.
+   - Revisa la conectividad de red desde el servidor.
 
-### Logs de Error Frecuentes
+## Contacto y Soporte
 
-```log
-[ERROR] WhatsApp API Rate Limit Exceeded
-Solución: Implementar backoff exponencial
+Para soporte técnico o consultas sobre el bot, contacta a:
 
-[ERROR] Database Connection Lost
-Solución: Verificar pool de conexiones
+- **Equipo de Desarrollo**: desarrollo@conecta2.com
+- **Soporte Técnico**: soporte@conecta2.com
 
-[ERROR] Mikrotik SSH Timeout
-Solución: Revisar configuración de red
-```
+---
 
-## 🔄 Actualizaciones
-
-### Proceso de Deploy
-
-```bash
-# Backup de base de datos
-pg_dump conecta2_bot > backup_$(date +%Y%m%d).sql
-
-# Pull últimos cambios
-git pull origin main
-
-# Rebuild y deploy
-docker-compose build --no-cache
-docker-compose up -d
-
-# Verificar salud
-curl https://tu-dominio.com/health
-```
-
-### Versionado
-
-- **Major** (1.x.x): Cambios breaking
-- **Minor** (x.1.x): Nuevas características
-- **Patch** (x.x.1): Bug fixes
-
-## 📞 Soporte
-
-### Canales de Soporte
-
-- **Email**: soporte-bot@conecta2.com
-- **WhatsApp**: +57 300 123 4567
-- **Slack**: #bot-conecta2
-- **Documentación**: https://docs.conecta2.com/bot
-
-### Escalación de Incidentes
-
-1. **Nivel 1** - Desarrollo
-2. **Nivel
+© 2023 Conecta2 Telecomunicaciones SAS. Todos los derechos reservados.
