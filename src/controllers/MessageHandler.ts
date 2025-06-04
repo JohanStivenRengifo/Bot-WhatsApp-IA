@@ -8,6 +8,27 @@ import {
     AIService,
     SecurityService
 } from '../services';
+import { SessionManager } from '../services/SessionManager';
+import {
+    ConversationFlowManager,
+    AuthenticationFlow,
+    PrivacyPolicyFlow,
+    TicketFlow,
+    MainMenuFlow,
+    ServiceReactivationFlow,
+    InitialSelectionFlow,
+    SalesFlow,
+    TechnicalSupportFlow,
+    InvoicesFlow,
+    TicketCreationFlow,
+    PasswordChangeFlow,
+    GeneralSupportFlow,
+    PaymentVerificationFlow,
+    PlanUpgradeFlow,
+    AdvisorTransferFlow,
+    IPDiagnosticFlow,
+    PaymentPointsFlow
+} from '../flows';
 import { isValidPassword } from '../utils';
 
 export class MessageHandler {
@@ -19,14 +40,28 @@ export class MessageHandler {
     private paymentService: PaymentService;
     private aiService: AIService;
     private securityService: SecurityService;
-
-    constructor() {
+    private flowManager: ConversationFlowManager;
+    private sessionManager: SessionManager; constructor() {
         this.messageService = new MessageService();
         this.customerService = new CustomerService();
         this.ticketService = new TicketService();
         this.paymentService = new PaymentService();
         this.aiService = new AIService();
         this.securityService = new SecurityService();
+
+        // Inicializar el gestor de sesiones
+        this.sessionManager = new SessionManager(this.messageService);
+
+        // Inicializar el gestor de flujos
+        this.flowManager = new ConversationFlowManager();
+
+        // Registrar los flujos de conversación
+        this.registerConversationFlows();
+
+        // Configurar limpieza periódica de sesiones expiradas
+        setInterval(() => {
+            this.sessionManager.cleanupExpiredSessions();
+        }, 5 * 60 * 1000); // Cada 5 minutos
     }
 
     async processMessage(message: WhatsAppMessage): Promise<void> {
@@ -83,9 +118,7 @@ export class MessageHandler {
 
         // Process message based on user state
         await this.handleUserMessage(user, messageText);
-    }
-
-    private async handleUserMessage(user: User, message: string): Promise<void> {
+    } private async handleUserMessage(user: User, message: string): Promise<void> {
         try {
             // Verificar si necesita atención humana primero, antes de cualquier otro flujo
             const needsHuman = await this.customerService.needsHumanAssistance(message);
@@ -94,54 +127,63 @@ export class MessageHandler {
                 return;
             }
 
-            // Privacy policy acceptance flow
-            if (!user.acceptedPrivacyPolicy) {
-                await this.handlePrivacyPolicyFlow(user, message);
-                return;
+            // Obtener o crear una sesión para este usuario
+            let session = this.userSessions.get(user.phoneNumber);
+            if (!session) {
+                session = {
+                    changingPassword: false,
+                    creatingTicket: false,
+                    handlingReactivation: false
+                };
+                this.userSessions.set(user.phoneNumber, session);
             }
 
-            // Authentication flow
-            if (!user.authenticated) {
-                await this.handleAuthenticationFlow(user, message);
-                return;
+            // Si el usuario está autenticado, validar sesión
+            if (user.authenticated) {
+                const sessionValidation = this.securityService.validateSession(user.phoneNumber);
+                if (!sessionValidation.valid) {
+                    // Sesión expirada, requiere re-autenticación
+                    user.authenticated = false;
+                    user.sessionId = undefined;
+                    user.sessionExpiresAt = undefined;
+                    this.users.set(user.phoneNumber, user);
+
+                    await this.messageService.sendTextMessage(user.phoneNumber,
+                        '🔒 Tu sesión ha expirado por seguridad.\n\n' +
+                        'Por favor, autentica nuevamente ingresando tu número de documento:');
+                    return;
+                }
+
+                // Actualizar última actividad
+                user.lastActivity = new Date();
+                this.users.set(user.phoneNumber, user);                // Enviar recordatorio de sesión si quedan menos de 15 minutos
+                if (sessionValidation.remainingTime && sessionValidation.remainingTime <= 15) {
+                    await this.messageService.sendTextMessage(user.phoneNumber,
+                        `⏰ Tu sesión expirará en ${sessionValidation.remainingTime} minutos.\n\n` +
+                        'Escribe cualquier mensaje para extender tu sesión automáticamente.');
+                }
             }
-
-            // Session validation for authenticated users
-            const sessionCheck = this.securityService.validateSession(user.phoneNumber);
-            if (!sessionCheck.valid) {
-                // Session expired, require re-authentication
-                user.authenticated = false;
-                user.sessionId = undefined;
-                user.sessionExpiresAt = undefined;
-                this.users.set(user.phoneNumber, user);
-
-                await this.messageService.sendTextMessage(user.phoneNumber,
-                    '🔒 Tu sesión ha expirado por seguridad.\n\n' +
-                    'Por favor, autentica nuevamente ingresando tu número de documento:');
-                return;
-            }
-
-            // Update last activity
             user.lastActivity = new Date();
             this.users.set(user.phoneNumber, user);
 
-            // Send session reminder if less than 15 minutes remaining
-            if (sessionCheck.remainingTime && sessionCheck.remainingTime <= 15) {
-                await this.messageService.sendTextMessage(user.phoneNumber,
-                    `⏰ Tu sesión expirará en ${sessionCheck.remainingTime} minutos.\n\n` +
-                    'Escribe cualquier mensaje para extender tu sesión automáticamente.');
+            // Main menu and commands
+            // Procesar el mensaje a través del gestor de flujos
+            const handled = await this.flowManager.processMessage(user, message, session);
+
+            // Si ningún flujo manejó el mensaje, intentar procesarlo como una consulta de IA
+            if (!handled) {
+                await this.handleIntelligentResponse(user, message);
             }
 
-            // Main menu and commands
-            await this.handleMainCommands(user, message);
+            // Guardar el usuario y la sesión después de procesado el mensaje
+            this.users.set(user.phoneNumber, user);
+            this.userSessions.set(user.phoneNumber, session);
         } catch (error) {
             console.error('Error handling user message:', error);
             await this.messageService.sendTextMessage(user.phoneNumber,
                 'Ha ocurrido un error técnico. Por favor, intenta nuevamente en unos minutos.');
         }
-    }
-
-    private async handlePrivacyPolicyFlow(user: User, message: string): Promise<void> {
+    } private async handlePrivacyPolicyFlow(user: User, message: string): Promise<void> {
         if (message.toLowerCase().includes('acepto') || message === 'accept_privacy') {
             user.acceptedPrivacyPolicy = true;
             this.users.set(user.phoneNumber, user);
@@ -150,6 +192,10 @@ export class MessageHandler {
                 '✅ Gracias por aceptar nuestras políticas.\n\n' +
                 'Ahora necesito autenticarte para brindarte soporte personalizado.\n\n' +
                 'Por favor, ingresa tu número de documento de identidad:');
+
+            // Creamos una propiedad para indicar que está esperando un documento
+            user.awaitingDocument = true;
+            this.users.set(user.phoneNumber, user);
         } else if (message.toLowerCase().includes('no acepto') || message === 'reject_privacy') {
             // User rejected privacy policy
             await this.messageService.sendTextMessage(user.phoneNumber,
@@ -169,23 +215,67 @@ export class MessageHandler {
             // User sent something else, show privacy policy again
             await this.messageService.sendPrivacyPolicyMessage(user.phoneNumber);
         }
-    }
-
-    private async handleAuthenticationFlow(user: User, message: string): Promise<void> {
+    } private async handleAuthenticationFlow(user: User, message: string): Promise<void> {
         try {
-            // Validar que el mensaje sea un número de documento válido
-            if (!/^\d{6,12}$/.test(message)) {
-                await this.messageService.sendTextMessage(user.phoneNumber,
-                    '❌ El número de documento debe contener entre 6 y 12 dígitos numéricos.\n\n' +
-                    'Por favor, ingresa solo los números de tu documento de identidad:');
+            // Si ya validamos el formato en handleUserMessage, no necesitamos volver a validar
+            if (user.awaitingDocument && !/^\d{6,12}$/.test(message)) {
+                // Ya se mostró un mensaje de error en handleUserMessage
                 return;
             }
 
-            // Authenticate user with WispHub
+            // Si el mensaje no cumple con el formato de documento y no estamos en modo de espera
+            if (!user.awaitingDocument && !/^\d{6,12}$/.test(message)) {
+                await this.messageService.sendTextMessage(user.phoneNumber,
+                    '❌ El número de documento debe contener entre 6 y 12 dígitos numéricos.\n\n' +
+                    'Por favor, ingresa solo los números de tu documento de identidad:');
+
+                // Establecer el modo de espera para futuros mensajes
+                user.awaitingDocument = true;
+                this.users.set(user.phoneNumber, user);
+                return;
+            }
+
+            // Quitar el estado de espera de documento
+            user.awaitingDocument = false;
+            this.users.set(user.phoneNumber, user);            // Authenticate user with WispHub
             const customerData = await this.customerService.authenticateCustomer(message);
 
             if (customerData) {
-                // Successful authentication
+                // Verificar si el servicio está inactivo
+                if (customerData.isInactive) {
+                    await this.messageService.sendTextMessage(user.phoneNumber,
+                        `⚠️ Hola ${customerData.name},\n\n` +
+                        `Hemos identificado que tu servicio se encuentra actualmente inactivo (Estado: ${customerData.status}).\n\n` +
+                        `Para reactivar tu servicio o resolver cualquier inconveniente con tu cuenta, por favor:\n\n` +
+                        `1️⃣ Contacta a nuestro equipo de atención al cliente\n` +
+                        `2️⃣ Verifica si tienes pagos pendientes\n` +
+                        `3️⃣ Consulta el estado de tu facturación\n\n` +
+                        `¿Deseas que te ayude a revisar tu estado de cuenta?`);
+
+                    // Crear una sesión temporal para este usuario
+                    this.securityService.recordAuthAttempt(user.phoneNumber, true);
+
+                    user.authenticated = true;
+                    user.customerId = customerData.id;
+                    user.sessionId = this.securityService.createSession(user.phoneNumber);
+                    user.sessionExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos de sesión limitada
+                    user.lastActivity = new Date();
+
+                    // Guardar datos encriptados pero marcar como inactivo
+                    user.encryptedData = this.securityService.encryptSensitiveData(JSON.stringify({
+                        customerId: customerData.id,
+                        customerName: customerData.name,
+                        isInactive: true
+                    }));
+
+                    this.users.set(user.phoneNumber, user);
+
+                    // No mostrar menú principal completo, sino opciones limitadas
+                    await this.messageService.sendLimitedOptionsMenu(user.phoneNumber);
+                    return;
+                }
+
+                // Successful authentication for active users
                 this.securityService.recordAuthAttempt(user.phoneNumber, true);
 
                 user.authenticated = true;
@@ -202,15 +292,16 @@ export class MessageHandler {
                     customerId: customerData.id,
                     customerName: customerData.name
                 }));
-
                 this.users.set(user.phoneNumber, user);
 
                 await this.messageService.sendTextMessage(user.phoneNumber,
                     `✅ ¡Hola ${customerData.name}!\n\n` +
                     'Autenticación exitosa. Tu sesión estará activa por 2 horas.\n\n' +
                     '🔒 Sesión segura iniciada\n' +
-                    '⏰ Expiración automática por seguridad\n\n' +
-                    'Escribe "menu" para ver las opciones disponibles.');
+                    '⏰ Expiración automática por seguridad');
+
+                // Mostrar automáticamente el menú después de la autenticación exitosa
+                await this.messageService.sendMainMenu(user.phoneNumber);
             } else {
                 // Failed authentication
                 const canRetry = this.securityService.recordAuthAttempt(user.phoneNumber, false);
@@ -272,9 +363,7 @@ export class MessageHandler {
             case 'ticket':
             case 'soporte':
                 await this.handleTicketCreation(user);
-                break;
-
-            case 'mejorar_plan':
+                break; case 'mejorar_plan':
             case 'upgrade':
                 await this.handlePlanUpgrade(user);
                 break;
@@ -282,6 +371,11 @@ export class MessageHandler {
             case 'puntos_pago':
             case 'payment_points':
                 await this.handlePaymentPoints(user);
+                break;
+
+            case 'reactivar':
+            case 'reactivar_servicio':
+                await this.handleServiceReactivation(user);
                 break;
 
             case 'sesion':
@@ -385,7 +479,7 @@ export class MessageHandler {
             const debtInfo = await this.customerService.getCustomerDebt(user.customerId!);
 
             if (!debtInfo) {
-                await this.messageService.sendTextMessage(user.phoneNumber, 
+                await this.messageService.sendTextMessage(user.phoneNumber,
                     '❌ Lo siento, no pude obtener la información de tu deuda en este momento.\n\n' +
                     'Por favor, intenta nuevamente más tarde o contacta a nuestro servicio al cliente.');
                 return;
@@ -407,13 +501,18 @@ export class MessageHandler {
             await this.messageService.sendTextMessage(user.phoneNumber, debtMessage);
         } catch (error) {
             console.error('Error handling debt inquiry:', error);
-            await this.messageService.sendTextMessage(user.phoneNumber, 
+            await this.messageService.sendTextMessage(user.phoneNumber,
                 'Lo siento, ocurrió un error al consultar tu deuda. Por favor, intenta nuevamente más tarde.');
         }
-    }
-
-    private async handlePasswordChange(user: User): Promise<void> {
-        const session = this.userSessions.get(user.phoneNumber) || {};
+    } private async handlePasswordChange(user: User): Promise<void> {
+        let session = this.userSessions.get(user.phoneNumber);
+        if (!session) {
+            session = {
+                changingPassword: false,
+                creatingTicket: false,
+                handlingReactivation: false
+            };
+        }
 
         if (!session.changingPassword) {
             session.changingPassword = true;
@@ -426,80 +525,123 @@ export class MessageHandler {
                 'Ingresa tu contraseña actual:');
         }
         // Password change flow continues in intelligent response handler
-    }
+    } private async handleTicketCreation(user: User): Promise<void> {
+        let session = this.userSessions.get(user.phoneNumber);
+        if (!session) {
+            session = {
+                changingPassword: false,
+                creatingTicket: false,
+                handlingReactivation: false
+            };
+        }
 
-    private async handleTicketCreation(user: User): Promise<void> {
-        const session = this.userSessions.get(user.phoneNumber) || {};
+        try {
+            // Verificar si el usuario tiene un servicio activo antes de permitir la creación de tickets
+            if (user.encryptedData) {
+                const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
+                if (decryptedData.isInactive) {
+                    await this.messageService.sendTextMessage(user.phoneNumber,
+                        '⚠️ Tu servicio está actualmente inactivo.\n\n' +
+                        'Para reactivarlo y poder crear tickets de soporte técnico, primero debes regularizar tu cuenta.\n\n' +
+                        'Te recomendamos:\n' +
+                        '1️⃣ Verificar el estado de tu facturación\n' +
+                        '2️⃣ Realizar el pago pendiente si lo hubiera\n' +
+                        '3️⃣ Contactar a nuestro equipo de atención al cliente');
+                    return;
+                }
+            }
 
-        if (!session.creatingTicket) {
-            session.creatingTicket = true;
-            session.step = 'category';
-            this.userSessions.set(user.phoneNumber, session);
-
-            const ticketMenu = {
-                messaging_product: 'whatsapp',
-                to: user.phoneNumber,
-                type: 'interactive',
-                interactive: {
-                    type: 'list',
-                    header: {
-                        type: 'text',
-                        text: '🎫 Crear Ticket de Soporte'
-                    },
-                    body: {
-                        text: 'Selecciona el tipo de problema:'
-                    },
-                    action: {
-                        button: 'Seleccionar',
-                        sections: [
-                            {
-                                title: 'Problemas Técnicos',
-                                rows: [
-                                    {
-                                        id: 'internet_lento',
-                                        title: '🐌 Internet Lento',
-                                        description: 'Velocidad menor a la contratada'
-                                    },
-                                    {
-                                        id: 'sin_internet',
-                                        title: '🚫 Sin Internet',
-                                        description: 'No hay conexión a internet'
-                                    },
-                                    {
-                                        id: 'intermitente',
-                                        title: '📶 Conexión Intermitente',
-                                        description: 'Se corta constantemente'
-                                    }
-                                ]
-                            },
-                            {
-                                title: 'Otros',
-                                rows: [
-                                    {
-                                        id: 'facturacion',
-                                        title: '💰 Facturación',
-                                        description: 'Problemas con cobros'
-                                    },
-                                    {
-                                        id: 'otro',
-                                        title: '❓ Otro',
-                                        description: 'Problema diferente'
-                                    }
-                                ]
-                            }
-                        ]
+            if (!session.creatingTicket) {
+                // Obtener información del cliente para personalizar la experiencia
+                let clientName = "cliente";
+                if (user.encryptedData) {
+                    try {
+                        const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
+                        if (decryptedData.customerName) {
+                            clientName = decryptedData.customerName.split(' ')[0]; // Usar solo el primer nombre
+                        }
+                    } catch (error) {
+                        console.error('Error decrypting user data:', error);
                     }
                 }
-            };
 
-            await this.messageService.sendMessage(ticketMenu);
+                session.creatingTicket = true;
+                session.step = 'category';
+                session.ticketData = {
+                    startTime: new Date(),
+                    clientName: clientName
+                };
+                this.userSessions.set(user.phoneNumber, session);
+
+                const ticketMenu = {
+                    messaging_product: 'whatsapp',
+                    to: user.phoneNumber,
+                    type: 'interactive',
+                    interactive: {
+                        type: 'list',
+                        header: {
+                            type: 'text',
+                            text: '🎫 Crear Ticket de Soporte'
+                        },
+                        body: {
+                            text: `Hola ${clientName}, vamos a crear un ticket de soporte para solucionar tu problema lo antes posible.\n\nSelecciona el tipo de problema que estás experimentando:`
+                        },
+                        action: {
+                            button: 'Seleccionar',
+                            sections: [
+                                {
+                                    title: 'Problemas Técnicos',
+                                    rows: [
+                                        {
+                                            id: 'internet_lento',
+                                            title: '🐌 Internet Lento',
+                                            description: 'Velocidad menor a la contratada'
+                                        },
+                                        {
+                                            id: 'sin_internet',
+                                            title: '🚫 Sin Internet',
+                                            description: 'No hay conexión a internet'
+                                        },
+                                        {
+                                            id: 'intermitente',
+                                            title: '📶 Conexión Intermitente',
+                                            description: 'Se corta constantemente'
+                                        }
+                                    ]
+                                },
+                                {
+                                    title: 'Otros',
+                                    rows: [
+                                        {
+                                            id: 'facturacion',
+                                            title: '💰 Facturación',
+                                            description: 'Problemas con cobros'
+                                        },
+                                        {
+                                            id: 'otro',
+                                            title: '❓ Otro',
+                                            description: 'Problema diferente'
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                };
+
+                await this.messageService.sendMessage(ticketMenu);
+            }
+        } catch (error) {
+            console.error('Error creating ticket:', error);
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Lo siento, ha ocurrido un error al crear el ticket. Por favor, intenta nuevamente en unos momentos.');
         }
     }
 
     private async handlePlanUpgrade(user: User): Promise<void> {
         try {
             const currentPlan = await this.customerService.getCustomerPlan(user.customerId!);
-            
+
             if (!currentPlan) {
                 await this.messageService.sendTextMessage(user.phoneNumber,
                     '❌ Lo siento, no pude obtener la información de tu plan actual.\n\n' +
@@ -728,39 +870,61 @@ export class MessageHandler {
                     session.description = message;
 
                     // Create ticket
-                    const ticketId = await this.ticketService.createTicket(
-                        user.customerId!,
-                        session.category ? this.ticketService.getCategoryName(session.category) : 'Sin categoría',
-                        session.description || 'Sin descripción'
-                    );
+                    const ticketData = {
+                        customerId: user.customerId!,
+                        category: session.category,
+                        description: session.description,
+                        priority: 'media' as const
+                    };
 
-                    // Clear session
-                    this.userSessions.delete(user.phoneNumber);
+                    const ticketId = await this.ticketService.createTicket(ticketData);
 
+                    // Notificar la creación del ticket
                     await this.messageService.sendTextMessage(user.phoneNumber,
-                        `✅ *Ticket Creado Exitosamente*\n\n` +
-                        `🎫 Número: #${ticketId}\n` +
-                        `📋 Categoría: ${session.category ? this.ticketService.getCategoryName(session.category) : 'Sin categoría'}\n` +
-                        `⏰ Tiempo estimado de respuesta: 2-4 horas\n\n` +
-                        `📱 Te notificaremos por WhatsApp cuando tengamos actualizaciones.\n\n` +
-                        `¿Necesitas algo más? Escribe "menu" para ver otras opciones.`);
+                        '✅ *Ticket Creado Exitosamente*\n\n' +
+                        `🔍 Ticket ID: ${ticketId}\n` +
+                        `📋 Categoría: ${this.ticketService.getCategoryName(session.category || 'general')}\n` +
+                        `📝 Descripción: ${session.description}\n\n` +
+                        '👉 *Próximos Pasos:*\n' +
+                        '• Tu ticket será revisado por nuestro equipo\n' +
+                        '• Te notificaremos cuando haya actualizaciones\n' +
+                        '• Puedes consultar el estado con el comando /ticket\n\n' +
+                        '¡Gracias por tu paciencia! 🙏');
 
-                    // Send notification to CRM
+                    // Notificar internamente del nuevo ticket
                     await this.ticketService.notifyNewTicket(ticketId, user.customerId!);
+
+                    // Limpiar datos de sesión
+                    session.creatingTicket = false;
+                    session.category = undefined;
+                    session.description = undefined;
+                    session.step = undefined;
+                    this.userSessions.set(user.phoneNumber, session);
                     break;
                 }
             }
         } catch (error) {
-            console.error('Ticket flow error:', error);
-            this.userSessions.delete(user.phoneNumber);
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Error al crear ticket. Contacta directamente a soporte técnico.');
-        }
-    }
+            console.error('Error handling ticket flow:', error);
+            await this.messageService.sendErrorMessage(user.phoneNumber,
+                'No se pudo procesar tu solicitud de ticket. Por favor, intenta nuevamente.');
 
-    private async createAutoTicket(user: User, subject: string, description: string): Promise<void> {
+            // Reset session state on error
+            session.creatingTicket = false;
+            session.category = undefined;
+            session.description = undefined;
+            session.step = undefined;
+            this.userSessions.set(user.phoneNumber, session);
+        }
+    } private async createAutoTicket(user: User, subject: string, description: string): Promise<void> {
         try {
-            const ticketId = await this.ticketService.createTicket(user.customerId!, subject, description);
+            const ticketData = {
+                customerId: user.customerId!,
+                category: 'general',
+                description: description,
+                priority: 'media' as const
+            };
+
+            const ticketId = await this.ticketService.createTicket(ticketData);
             console.log(`Auto-ticket created: ${ticketId} for user ${user.phoneNumber}`);
         } catch (error) {
             console.error('Auto-ticket creation error:', error);
@@ -874,6 +1038,110 @@ export class MessageHandler {
             console.error('Human assistance request error:', error);
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '❌ Lo siento, hubo un error al procesar tu solicitud. Por favor, intenta nuevamente en unos minutos.');
+        }
+    }    /**
+     * Registra todos los flujos de conversación disponibles
+     */
+    private registerConversationFlows(): void {
+        // Registrar el flujo de selección inicial (debe ser primero)
+        this.flowManager.registerFlow(
+            new InitialSelectionFlow(this.messageService, this.securityService)
+        );
+
+        // Registrar el flujo de política de privacidad
+        this.flowManager.registerFlow(
+            new PrivacyPolicyFlow(this.messageService, this.securityService)
+        );
+
+        // Registrar el flujo de autenticación
+        this.flowManager.registerFlow(
+            new AuthenticationFlow(this.messageService, this.securityService, this.customerService)
+        );
+
+        // Registrar el flujo de ventas
+        this.flowManager.registerFlow(
+            new SalesFlow(this.messageService, this.securityService, this.aiService, this.customerService)
+        );
+
+        // Registrar el flujo de soporte técnico
+        this.flowManager.registerFlow(
+            new TechnicalSupportFlow(this.messageService, this.securityService, this.customerService)
+        );        // Registrar el flujo de facturas
+        this.flowManager.registerFlow(
+            new InvoicesFlow(this.messageService, this.securityService, this.customerService)
+        );        // Registrar los nuevos flujos técnicos especializados
+        this.flowManager.registerFlow(
+            new TicketCreationFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        this.flowManager.registerFlow(
+            new PasswordChangeFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        this.flowManager.registerFlow(
+            new GeneralSupportFlow(this.messageService, this.securityService, this.aiService, this.customerService)
+        ); this.flowManager.registerFlow(
+            new PaymentVerificationFlow(this.messageService, this.securityService, this.paymentService, this.aiService)
+        ); this.flowManager.registerFlow(
+            new PlanUpgradeFlow(this.messageService, this.securityService, this.customerService)
+        );
+
+        this.flowManager.registerFlow(
+            new AdvisorTransferFlow(this.messageService, this.aiService, this.customerService)
+        );
+
+        this.flowManager.registerFlow(
+            new IPDiagnosticFlow(this.messageService, this.aiService, this.customerService)
+        );
+
+        this.flowManager.registerFlow(
+            new PaymentPointsFlow(this.messageService, this.aiService, this.customerService)
+        );
+
+        // Registrar el flujo de tickets
+        this.flowManager.registerFlow(
+            new TicketFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        // Registrar el flujo de reactivación de servicio
+        this.flowManager.registerFlow(
+            new ServiceReactivationFlow(
+                this.messageService,
+                this.securityService,
+                this.customerService,
+                this.paymentService
+            )
+        );
+
+        // Registrar el flujo de menú principal (debe ser el último para que funcione como fallback)
+        this.flowManager.registerFlow(
+            new MainMenuFlow(this.messageService, this.securityService)
+        );
+    }
+    private async handleServiceReactivation(user: User): Promise<void> {
+        try {
+            // Intentar procesar a través del flujo de reactivación
+            const session = this.userSessions.get(user.phoneNumber) || {
+                changingPassword: false,
+                creatingTicket: false,
+                handlingReactivation: false
+            };
+
+            session.handlingReactivation = true;
+            this.userSessions.set(user.phoneNumber, session);
+
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '🔄 *Reactivación de Servicio*\n\n' +
+                'Te ayudaré con la reactivación de tu servicio.\n\n' +
+                'Verificando tu estado de cuenta...');
+
+            // El flujo específico manejará el resto
+            await this.flowManager.processMessage(user, 'reactivar_servicio', session);
+
+        } catch (error) {
+            console.error('Error handling service reactivation:', error);
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Error al procesar la reactivación. Por favor, contacta atención al cliente.');
         }
     }
 }

@@ -61,12 +61,51 @@ export interface WhatsAppWebhookValue {
 }
 
 export interface SessionData {
-    changingPassword?: boolean;
-    creatingTicket?: boolean;
-    step?: string;
+    // Flags de estado de flujos
+    changingPassword: boolean;
+    creatingTicket: boolean;
+    handlingReactivation: boolean;
+
+    // Nuevos flags para flows
+    flowActive?: string;
+    selectedService?: 'ventas' | 'soporte';
+    consultingInvoices?: boolean;
+    upgradingPlan?: boolean;
+    verifyingPayment?: boolean;
+    salesConversationStarted?: boolean;
+
+    // Datos del paso actual
+    step?: 'category' | 'description' | 'confirmation' | 'current_password' | 'new_password' | 'verify_password' | 'confirm_password' | 'service_selection' | 'payment_verification';
     category?: string;
     description?: string;
     newPassword?: string;
+
+    // Datos de ticket
+    ticketData?: {
+        startTime: Date;
+        clientName: string;
+        category?: string;
+        urgency?: string;
+    };
+
+    // Historial de conversación de ventas
+    salesHistory?: Array<{
+        user: string;
+        ai: string;
+        timestamp: Date;
+    }>;
+
+    // Datos de servicio para usuarios multi-servicio
+    selectedServiceId?: string;
+    availableServices?: Array<{
+        id: string;
+        name: string;
+        status: string;
+    }>;
+
+    // Timeout de sesión (10 minutos)
+    lastActivity?: Date;
+    sessionTimeout?: NodeJS.Timeout;
 }
 
 export interface CustomerData {
@@ -76,6 +115,10 @@ export interface CustomerData {
     document?: string;
     ip_address?: string;
     status?: string;
+    isInactive?: boolean;
+    address?: string;
+    phone?: string;
+    comments?: string;
 }
 
 export interface PlanData {
@@ -98,7 +141,10 @@ export interface PaymentPoint {
 
 export interface DebtInfo {
     totalDebt: number;
+    totalAmount: number; // Alias para totalDebt
     pendingInvoices: number;
+    invoicesCount: number; // Alias para pendingInvoices
     nextDueDate: Date;
     overdueAmount?: number;
+    status: 'pending' | 'overdue' | 'critical' | 'partial';
 }

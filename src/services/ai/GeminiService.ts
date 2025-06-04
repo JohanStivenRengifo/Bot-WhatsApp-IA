@@ -5,6 +5,7 @@ import { User, IAIService, AIResponse } from '../../interfaces';
 export class GeminiService implements IAIService {
     public readonly name = 'Gemini';
     private genAI: GoogleGenerativeAI | null = null;
+    private model: string = 'gemini-1.5-flash'; // Usando un modelo más estable
 
     constructor() {
         if (config.ai.gemini.apiKey) {
@@ -18,9 +19,10 @@ export class GeminiService implements IAIService {
         }
 
         try {
-            // Test the API with a simple request
-            const model = this.genAI.getGenerativeModel({ model: "gemini-pro" });
-            await model.generateContent('test');
+            // Test the API with a simple request using the new model
+            const model = this.genAI.getGenerativeModel({ model: this.model });
+            const result = await model.generateContent('test');
+            await result.response;
             return true;
         } catch (error) {
             console.warn(`Gemini service unavailable:`, error instanceof Error ? error.message : 'Unknown error');
@@ -41,7 +43,7 @@ export class GeminiService implements IAIService {
         try {
             const prompt = this.buildPrompt(message);
             const model = this.genAI.getGenerativeModel({
-                model: "gemini-pro",
+                model: this.model,
                 generationConfig: {
                     maxOutputTokens: 150,
                     temperature: 0.7,
