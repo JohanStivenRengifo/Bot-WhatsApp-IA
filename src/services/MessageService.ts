@@ -231,4 +231,68 @@ export class MessageService {
 
         await this.sendMessage(paymentMessage);
     }
+
+    async sendLimitedOptionsMenu(phoneNumber: string): Promise<void> {
+        const limitedMenuMessage = {
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                header: {
+                    type: 'text',
+                    text: '🔶 Opciones Disponibles'
+                },
+                body: {
+                    text: 'Tu servicio está inactivo. Estas son las opciones disponibles:'
+                },
+                action: {
+                    button: 'Ver opciones',
+                    sections: [
+                        {
+                            title: 'Facturación',
+                            rows: [
+                                {
+                                    id: 'factura',
+                                    title: '📄 Mi Factura',
+                                    description: 'Consultar y descargar facturas'
+                                },
+                                {
+                                    id: 'deuda',
+                                    title: '💰 Consultar Deuda',
+                                    description: 'Ver saldo pendiente'
+                                },
+                                {
+                                    id: 'puntos_pago',
+                                    title: '📍 Puntos de Pago',
+                                    description: 'Ubicaciones para pagar'
+                                }
+                            ]
+                        },
+                        {
+                            title: 'Soporte',
+                            rows: [
+                                {
+                                    id: 'reactivar',
+                                    title: '🔄 Reactivar Servicio',
+                                    description: 'Opciones para reactivación'
+                                },
+                                {
+                                    id: 'hablar_agente',
+                                    title: '👨‍💼 Hablar con Agente',
+                                    description: 'Contactar soporte humano'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        };
+
+        await this.sendMessage(limitedMenuMessage);
+    }
+
+    async sendErrorMessage(phoneNumber: string, text: string): Promise<void> {
+        await this.sendTextMessage(phoneNumber, `❌ ${text}`);
+    }
 }
