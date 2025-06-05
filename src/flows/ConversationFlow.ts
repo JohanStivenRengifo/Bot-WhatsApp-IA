@@ -13,19 +13,19 @@ export interface ConversationFlow {
     /**
      * Verifica si el flujo puede manejar el mensaje actual
      * @param user Usuario actual
-     * @param message Mensaje recibido
+     * @param message Mensaje recibido (puede ser string o WhatsAppMessage)
      * @param session Datos de sesión actual
      */
-    canHandle(user: User, message: string, session: SessionData): Promise<boolean>;
+    canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean>;
 
     /**
      * Procesa el mensaje dentro del flujo
      * @param user Usuario actual
-     * @param message Mensaje recibido
+     * @param message Mensaje recibido (puede ser string o WhatsAppMessage)
      * @param session Datos de sesión actual
      * @returns true si el mensaje fue manejado completamente, false si debe continuar el procesamiento
      */
-    handle(user: User, message: string, session: SessionData): Promise<boolean>;
+    handle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean>;
 }
 
 /**
@@ -40,10 +40,10 @@ export abstract class BaseConversationFlow implements ConversationFlow {
     constructor(messageService: MessageService, securityService: SecurityService) {
         this.messageService = messageService;
         this.securityService = securityService;
-    }
-
-    abstract canHandle(user: User, message: string, session: SessionData): Promise<boolean>;
-    abstract handle(user: User, message: string, session: SessionData): Promise<boolean>;
+    }    // Para compatibilidad, los métodos abstractos siguen siendo para string solamente
+    // PaymentReceiptFlow sobrescribirá estos métodos para manejar WhatsAppMessage
+    abstract canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean>;
+    abstract handle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean>;
 
     /**
      * Método utilitario para decodificar datos encriptados del usuario
@@ -65,5 +65,5 @@ export abstract class BaseConversationFlow implements ConversationFlow {
  */
 export interface FlowManager {
     registerFlow(flow: ConversationFlow): void;
-    processMessage(user: User, message: string, session: SessionData): Promise<boolean>;
+    processMessage(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean>;
 }

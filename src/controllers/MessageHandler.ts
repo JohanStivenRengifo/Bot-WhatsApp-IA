@@ -22,7 +22,8 @@ import {
     PasswordChangeFlow,
     PlanUpgradeFlow,
     IPDiagnosticFlow,
-    PaymentPointsFlow
+    PaymentPointsFlow,
+    PaymentReceiptFlow
 } from '../flows';
 import { isValidPassword } from '../utils';
 
@@ -57,12 +58,8 @@ export class MessageHandler {
         setInterval(() => {
             this.sessionManager.cleanupExpiredSessions();
         }, 5 * 60 * 1000); // Cada 5 minutos
-    }
-
-    async processMessage(message: WhatsAppMessage): Promise<void> {
+    } async processMessage(message: WhatsAppMessage): Promise<void> {
         const phoneNumber = message.from;
-        const messageType = message.type;
-        let messageText = '';
 
         // Check rate limiting first
         const rateLimitCheck = this.securityService.checkRateLimit(phoneNumber);
@@ -87,19 +84,6 @@ export class MessageHandler {
             return;
         }
 
-        // Extract message text based on type
-        switch (messageType) {
-            case 'text':
-                messageText = message.text?.body || '';
-                break;
-            case 'interactive':
-                messageText = message.interactive?.button_reply?.id ||
-                    message.interactive?.list_reply?.id || '';
-                break;
-            default:
-                messageText = 'unsupported_message_type';
-        }
-
         // Get or create user
         let user = this.users.get(phoneNumber);
         if (!user) {
@@ -112,8 +96,8 @@ export class MessageHandler {
         }
 
         // Process message based on user state
-        await this.handleUserMessage(user, messageText);
-    } private async handleUserMessage(user: User, message: string): Promise<void> {
+        await this.handleUserMessage(user, message);
+    } private async handleUserMessage(user: User, message: WhatsAppMessage): Promise<void> {
         try {
             // Obtener o crear una sesión para este usuario
             let session = this.userSessions.get(user.phoneNumber);
@@ -159,7 +143,7 @@ export class MessageHandler {
             await this.messageService.sendTextMessage(user.phoneNumber,
                 'Ha ocurrido un error técnico. Por favor, intenta nuevamente en unos minutos.');
         }
-    }    /**
+    }/**
      * Registra todos los flujos de conversación disponibles
      */
     private registerConversationFlows(): void {
@@ -199,7 +183,7 @@ export class MessageHandler {
         );        // Registrar el flujo de cambio de contraseña
         this.flowManager.registerFlow(
             new PasswordChangeFlow(this.messageService, this.securityService, this.ticketService)
-        );// Registrar el flujo de puntos de pago
+        );        // Registrar el flujo de puntos de pago
         this.flowManager.registerFlow(
             new PaymentPointsFlow(this.messageService)
         );
@@ -207,6 +191,11 @@ export class MessageHandler {
         // Registrar el flujo de diagnóstico IP
         this.flowManager.registerFlow(
             new IPDiagnosticFlow(this.messageService, this.securityService, this.customerService)
+        );
+
+        // Registrar el flujo de comprobantes de pago
+        this.flowManager.registerFlow(
+            new PaymentReceiptFlow()
         );
 
         // Registrar el flujo de menú principal (debe ser el último para que funcione como fallback)

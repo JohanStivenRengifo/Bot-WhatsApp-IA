@@ -5,7 +5,7 @@ import { User, IAIService, AIResponse } from '../../interfaces';
 export class GeminiService implements IAIService {
     public readonly name = 'Gemini';
     private genAI: GoogleGenerativeAI | null = null;
-    private model: string = 'gemini-1.5-flash'; // Usando un modelo más estable
+    private model: string = 'gemini-2.0-flash'; // Usando un modelo más estable
 
     constructor() {
         if (config.ai.gemini.apiKey) {
@@ -86,13 +86,84 @@ export class GeminiService implements IAIService {
         }
     }
 
+    /**
+     * Analiza una imagen usando Gemini Vision API
+     */
+    async analyzeImage(imageDataUrl: string, prompt: string): Promise<AIResponse> {
+        if (!this.genAI) {
+            return {
+                success: false,
+                message: '',
+                service: this.name,
+                error: 'Gemini API key no configurada'
+            };
+        }
+
+        try {
+            // Extraer datos de la imagen del data URL
+            const [header, base64Data] = imageDataUrl.split(',');
+            const mimeType = header.match(/data:([^;]+)/)?.[1] || 'image/jpeg';
+
+            const model = this.genAI.getGenerativeModel({
+                model: 'gemini-1.5-flash',
+                generationConfig: {
+                    maxOutputTokens: 500,
+                    temperature: 0.1,
+                    topP: 0.8,
+                    topK: 40
+                }
+            });
+
+            const imagePart = {
+                inlineData: {
+                    data: base64Data,
+                    mimeType: mimeType
+                }
+            };
+
+            const result = await model.generateContent([prompt, imagePart]);
+            const response = await result.response;
+            const aiMessage = response.text().trim();
+
+            return {
+                success: true,
+                message: aiMessage,
+                service: this.name
+            };
+        } catch (error) {
+            console.error('Gemini Vision service error:', error);
+
+            let errorMessage = 'Error interno del servicio de análisis de imagen';
+            if (error instanceof Error) {
+                if (error.message.includes('API_KEY_INVALID')) {
+                    errorMessage = 'Clave de API de Gemini inválida';
+                } else if (error.message.includes('QUOTA_EXCEEDED')) {
+                    errorMessage = 'Límite de uso de Gemini alcanzado';
+                } else if (error.message.includes('timeout')) {
+                    errorMessage = 'Timeout en la conexión con Gemini';
+                } else if (error.message.includes('SAFETY')) {
+                    errorMessage = 'Contenido bloqueado por filtros de seguridad';
+                } else if (error.message.includes('INVALID_ARGUMENT')) {
+                    errorMessage = 'Imagen no válida o formato no soportado';
+                }
+            }
+
+            return {
+                success: false,
+                message: '',
+                service: this.name,
+                error: errorMessage
+            };
+        }
+    }
+
     private buildPrompt(message: string): string {
         return `Eres un asistente de soporte técnico para Conecta2 Telecomunicaciones SAS, una empresa de internet en Colombia. 
 Responde de manera amigable, profesional y concisa.
 
 Instrucciones:
 - Responde en español
-- Máximo 200 caracteres
+- Máximo 80 caracteres
 - Sé específico y útil
 - Si el usuario escribe "ayuda", muestra las principales opciones disponibles
 - Si es una consulta técnica compleja, sugiere crear un ticket usando "ticket"

@@ -12,3 +12,4 @@ export * from './PasswordChangeFlow';
 export * from './PlanUpgradeFlow';
 export * from './IPDiagnosticFlow';
 export * from './PaymentPointsFlow';
+export * from './PaymentReceiptFlow';

@@ -1,4 +1,4 @@
-import { User, SessionData } from '../interfaces';
+import { User, SessionData, WhatsAppMessage } from '../interfaces';
 import { ConversationFlow } from './ConversationFlow';
 
 /**
@@ -19,7 +19,7 @@ export class ConversationFlowManager {
      * Procesa un mensaje a través de los flujos registrados
      * @returns true si el mensaje fue manejado por algún flujo, false en caso contrario
      */
-    async processMessage(user: User, message: string, session: SessionData): Promise<boolean> {
+    async processMessage(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
         // Verificar cada flujo en orden
         for (const flow of this.flows) {
             try {
