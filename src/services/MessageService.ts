@@ -4,7 +4,9 @@ import { config } from '../config';
 export class MessageService {
     async sendMessage(message: Record<string, unknown>): Promise<void> {
         try {
-            await axios.post(
+            console.log(`[MessageService] 📤 Enviando mensaje a WhatsApp API:`, JSON.stringify(message, null, 2));
+
+            const response = await axios.post(
                 `https://graph.facebook.com/${config.meta.version}/${config.meta.phoneNumberId}/messages`,
                 message,
                 {
@@ -14,8 +16,10 @@ export class MessageService {
                     }
                 }
             );
-        } catch (error) {
-            console.error('Error sending message:', error);
+
+            console.log(`[MessageService] ✅ Mensaje enviado exitosamente:`, response.status, response.data);
+        } catch (error: any) {
+            console.error(`[MessageService] ❌ Error sending message:`, error.response?.data || error.message);
             throw error;
         }
     }

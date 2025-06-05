@@ -1,6 +1,8 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, TicketService } from '../services';
+import axios from 'axios';
+import { config } from '../config';
 
 /**
  * Flujo especializado para creación de tickets con WispHub API
@@ -9,27 +11,41 @@ export class TicketCreationFlow extends BaseConversationFlow {
     readonly name: string = 'ticketCreation';
 
     private ticketService: TicketService;
-
-    constructor(
+    private apiKey: string;
+    private apiUrl: string; constructor(
         messageService: MessageService,
         securityService: SecurityService,
         ticketService: TicketService
     ) {
         super(messageService, securityService);
         this.ticketService = ticketService;
+
+        // Configurar API key y URL directamente para garantizar conexión correcta
+        this.apiKey = 'Api-Key mHHsEQKX.Uc1BQzXFOCXUno64ZTM9K4vaDPjH9gLq';
+        this.apiUrl = 'https://api.wisphub.app/api/tickets/';
     }
 
     /**
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Normalizar el mensaje para facilitar la comparación
+        const normalizedMessage = message.toLowerCase().trim();
+        
         // Este flujo maneja:
         // 1. Cuando se selecciona "Crear Ticket" del menú de soporte
         // 2. Cuando está en proceso de creación de ticket
+        // 3. Cuando el usuario escribe variantes de "crear ticket" o "reportar problema"
         return (
             user.authenticated &&
-            (message === 'crear_ticket' ||
-                message === 'ticket_creation' ||
+            (normalizedMessage === 'crear_ticket' ||
+                normalizedMessage === 'ticket_creation' ||
+                normalizedMessage === 'soporte' ||
+                normalizedMessage === 'reportar_falla' ||
+                normalizedMessage.includes('rear ticket') ||
+                normalizedMessage.includes('crear ticket') ||
+                normalizedMessage.includes('reportar problema') ||
+                normalizedMessage.includes('ticket') ||
                 session.creatingTicket === true)
         );
     }
@@ -48,8 +64,7 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     'Te recomendamos:\n' +
                     '1️⃣ Verificar el estado de tu facturación\n' +
                     '2️⃣ Realizar el pago pendiente si lo hubiera\n' +
-                    '3️⃣ Contactar a nuestro equipo de atención al cliente\n\n' +
-                    'Escribe "reactivar" para más información.');
+                    '3️⃣ Contactar a nuestro equipo de atención al cliente');
                 return true;
             }
 
@@ -63,8 +78,6 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     return await this.handleCategorySelection(user, message, session);
                 case 'description':
                     return await this.handleDescriptionInput(user, message, session);
-                case 'confirmation':
-                    return await this.handleTicketConfirmation(user, message, session);
                 default:
                     return await this.initializeTicketCreation(user, session);
             }
@@ -78,23 +91,16 @@ export class TicketCreationFlow extends BaseConversationFlow {
             this.resetTicketSession(session);
             return true;
         }
-    }
-
-    /**
+    }    /**
      * Inicializa el proceso de creación de tickets
      */
     private async initializeTicketCreation(user: User, session: SessionData): Promise<boolean> {
-        // Obtener nombre del cliente
+        // Obtener datos del cliente usando el método mejorado
+        const userData = this.decodeUserData(user);
         let clientName = "cliente";
-        if (user.encryptedData) {
-            try {
-                const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
-                if (decryptedData.customerName) {
-                    clientName = decryptedData.customerName.split(' ')[0];
-                }
-            } catch (error) {
-                console.error('Error decrypting user data:', error);
-            }
+
+        if (userData && userData.customerName) {
+            clientName = userData.customerName.split(' ')[0];
         }
 
         session.creatingTicket = true;
@@ -104,7 +110,7 @@ export class TicketCreationFlow extends BaseConversationFlow {
             clientName: clientName
         };
 
-        // Enviar menú de categorías mejorado
+        // Categorías predefinidas para tickets
         const categoryMenu = {
             messaging_product: 'whatsapp',
             to: user.phoneNumber,
@@ -113,19 +119,19 @@ export class TicketCreationFlow extends BaseConversationFlow {
                 type: 'list',
                 header: {
                     type: 'text',
-                    text: '🎫 Crear Ticket de Soporte'
+                    text: '🎫 Reportar Falla'
                 },
                 body: {
-                    text: `Hola ${clientName}, vamos a crear un ticket de soporte técnico para resolver tu problema.\n\n🔧 Selecciona la categoría que mejor describe tu situación:`
+                    text: `Hola ${clientName}, vamos a reportar tu falla técnica.\n\n🔧 Selecciona el problema que estás experimentando:`
                 },
                 footer: {
-                    text: 'Tu ticket será atendido por nuestro equipo especializado'
+                    text: 'Tu reporte será atendido por nuestro equipo especializado'
                 },
                 action: {
-                    button: 'Seleccionar Categoría',
+                    button: 'Seleccionar Problema',
                     sections: [
                         {
-                            title: 'Problemas de Conectividad',
+                            title: 'Problemas de Internet',
                             rows: [
                                 {
                                     id: 'sin_internet',
@@ -153,29 +159,9 @@ export class TicketCreationFlow extends BaseConversationFlow {
                                     description: 'Router no funciona correctamente'
                                 },
                                 {
-                                    id: 'cables_dañados',
-                                    title: '🔌 Cables Dañados',
-                                    description: 'Problemas físicos de cableado'
-                                }
-                            ]
-                        },
-                        {
-                            title: 'Otros Problemas',
-                            rows: [
-                                {
-                                    id: 'configuracion',
-                                    title: '⚙️ Configuración',
-                                    description: 'Ayuda con configuración de red'
-                                },
-                                {
-                                    id: 'facturacion',
-                                    title: '💰 Facturación',
-                                    description: 'Problemas con cobros'
-                                },
-                                {
-                                    id: 'otro',
-                                    title: '❓ Otro',
-                                    description: 'Problema diferente'
+                                    id: 'antena_problema',
+                                    title: '📡 Problema con Antena',
+                                    description: 'No responde la antena'
                                 }
                             ]
                         }
@@ -197,33 +183,22 @@ export class TicketCreationFlow extends BaseConversationFlow {
             'internet_lento': 'Internet Lento',
             'intermitente': 'Conexión Intermitente',
             'router_problema': 'Problema con Router',
-            'cables_dañados': 'Cables Dañados',
-            'configuracion': 'Configuración de Red',
-            'facturacion': 'Facturación',
-            'otro': 'Otro Problema'
+            'antena_problema': 'No Responde La Antena'
         };
 
         if (!categoryNames[message]) {
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Categoría no válida. Por favor, selecciona una opción del menú.');
+                '❌ Opción no válida. Por favor, selecciona una opción del menú.');
             return true;
         }
 
         session.category = message;
         session.step = 'description';
-
-        const categoryName = categoryNames[message];
+        session.asunto = categoryNames[message];
 
         await this.messageService.sendTextMessage(user.phoneNumber,
-            `📝 Perfecto, seleccionaste: **${categoryName}**\n\n` +
-            'Ahora describe detalladamente tu problema:\n\n' +
-            '💡 **Incluye información importante:**\n' +
-            '• ¿Cuándo comenzó el problema?\n' +
-            '• ¿Con qué frecuencia ocurre?\n' +
-            '• ¿Qué has intentado hacer para solucionarlo?\n' +
-            '• ¿Hay algún mensaje de error específico?\n' +
-            '• ¿Afecta a todos los dispositivos o solo algunos?\n\n' +
-            '✍️ Escribe tu descripción completa:');
+            `📝 Seleccionaste: **${categoryNames[message]}**\n\n` +
+            'Ahora describe brevemente tu problema para ayudarnos a entenderlo mejor:');
 
         return true;
     }
@@ -232,90 +207,79 @@ export class TicketCreationFlow extends BaseConversationFlow {
      * Maneja la entrada de descripción
      */
     private async handleDescriptionInput(user: User, message: string, session: SessionData): Promise<boolean> {
-        if (message.length < 10) {
+        if (message.length < 5) {
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ La descripción es muy corta. Por favor, proporciona más detalles para que podamos ayudarte mejor.\n\n' +
-                'Describe tu problema con al menos 10 caracteres:');
+                '❌ Por favor, proporciona más detalles sobre tu problema.');
             return true;
         }
 
         session.description = message;
-        session.step = 'confirmation';
 
-        // Mostrar resumen y pedir confirmación
-        const categoryNames: { [key: string]: string } = {
-            'sin_internet': 'Sin Internet',
-            'internet_lento': 'Internet Lento',
-            'intermitente': 'Conexión Intermitente',
-            'router_problema': 'Problema con Router',
-            'cables_dañados': 'Cables Dañados',
-            'configuracion': 'Configuración de Red',
-            'facturacion': 'Facturación',
-            'otro': 'Otro Problema'
-        };
+        try {
+            // Crear ticket usando la API de WispHub
+            const now = new Date();
+            const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;            // Obtener ID de servicio del usuario
+            const userData = this.decodeUserData(user);
+            const serviceId = userData?.serviceId || "37"; // ID de servicio predeterminado si no está disponible
 
-        const confirmationMessage = {
-            messaging_product: 'whatsapp',
-            to: user.phoneNumber,
-            type: 'interactive',
-            interactive: {
-                type: 'button',
-                header: {
-                    type: 'text',
-                    text: '✅ Confirmar Ticket'
-                },
-                body: {
-                    text: `📋 **Resumen del Ticket**\n\n` +
-                        `👤 Cliente: ${session.ticketData?.clientName}\n` +
-                        `📂 Categoría: ${categoryNames[session.category || 'otro']}\n` +
-                        `📝 Descripción: ${session.description}\n\n` +
-                        `¿Deseas crear este ticket de soporte?`
-                },
-                action: {
-                    buttons: [
-                        {
-                            type: 'reply',
-                            reply: {
-                                id: 'confirm_ticket',
-                                title: '✅ Crear Ticket'
-                            }
-                        },
-                        {
-                            type: 'reply',
-                            reply: {
-                                id: 'cancel_ticket',
-                                title: '❌ Cancelar'
-                            }
-                        }
-                    ]
-                }
+            const ticketData = new FormData();
+            ticketData.append('asuntos_default', session.asunto || "Internet Lento");
+            ticketData.append('asunto', session.asunto || "Internet Lento");            // Campo de técnico - REQUERIDO por WispHub API
+            let technicianId = config.wisphub.defaultTechnicianId?.trim();
+            if (!technicianId || technicianId === '') {
+                technicianId = '417534'; // Usuario administrativo de Conecta2tel
+                console.log('📋 Usando técnico por defecto (ID: 417534) - configura WISPHUB_DEFAULT_TECHNICIAN_ID para uno específico');
+            } else {
+                console.log('📋 Usando técnico configurado:', technicianId);
             }
-        };
+            ticketData.append('tecnico', technicianId);
 
-        await this.messageService.sendMessage(confirmationMessage);
-        return true;
-    }
+            ticketData.append('descripcion', `<p>${session.description}</p>`);
+            ticketData.append('estado', "1");
+            ticketData.append('prioridad', "1");
+            ticketData.append('servicio', serviceId);
+            ticketData.append('fecha_inicio', formattedDate);
+            ticketData.append('fecha_final', formattedDate);
+            ticketData.append('origen_reporte', "whatsapp");
+            ticketData.append('departamento', "Soporte Técnico");
+            ticketData.append('departamentos_default', "Soporte Técnico");
+            // Realizar la petición a la API de WispHub
+            const response = await axios.post(this.apiUrl, ticketData, {
+                headers: {
+                    'Authorization': this.apiKey
+                    // No establecemos Content-Type, axios lo configura automáticamente con el boundary correcto para FormData
+                }
+            });
 
-    /**
-     * Maneja la confirmación del ticket
-     */
-    private async handleTicketConfirmation(user: User, message: string, session: SessionData): Promise<boolean> {
-        if (message === 'cancel_ticket') {
-            this.resetTicketSession(session);
+            const ticketId = response.data?.id || "Pendiente";
+
+            // Enviar confirmación exitosa
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Creación de ticket cancelada.\n\n' +
-                'Si necesitas ayuda más tarde, puedes crear un nuevo ticket desde el menú de soporte técnico.');
-            return true;
-        }
+                '✅ **¡Reporte Recibido!**\n\n' +
+                `🔍 **Ticket #:** ${ticketId}\n` +
+                `📂 **Problema:** ${session.asunto}\n` +
+                `📅 **Fecha:** ${now.toLocaleDateString('es-CO')}\n\n` +
+                '👨‍💻 **Próximos pasos:**\n' +
+                '• Tu reporte será atendido por nuestro equipo técnico\n' +
+                '• Te contactaremos pronto para brindarte solución\n' +
+                '• Tiempo estimado de respuesta: 2-4 horas\n\n' +
+                '¡Gracias por reportar tu falla!');
 
-        if (message === 'confirm_ticket') {
+            // Limpiar estado de sesión
+            this.resetTicketSession(session);
+
+            return true;
+
+        } catch (error) {
+            console.error('Error al crear ticket en WispHub:', error);
+
+            // Intento alternativo usando el servicio interno
             try {
-                // Crear ticket usando WispHub API
                 const ticketData = {
                     customerId: user.customerId!,
                     category: session.category || 'general',
                     description: session.description || 'Sin descripción',
-                    priority: 'media' as const,
+                    priority: 'alta' as const,
                     source: 'whatsapp',
                     clientInfo: {
                         name: session.ticketData?.clientName,
@@ -323,44 +287,25 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     }
                 };
 
-                const ticketId = await this.ticketService.createTicket(ticketData);
+                await this.ticketService.createTicket(ticketData);
 
-                // Enviar confirmación exitosa
                 await this.messageService.sendTextMessage(user.phoneNumber,
-                    '🎉 **¡Ticket Creado Exitosamente!**\n\n' +
-                    `🔍 **Ticket ID:** ${ticketId}\n` +
-                    `📂 **Categoría:** ${this.getCategoryDisplayName(session.category || 'general')}\n` +
+                    '✅ **¡Reporte Recibido!**\n\n' +
+                    `📂 **Problema:** ${session.asunto}\n` +
                     `📅 **Fecha:** ${new Date().toLocaleDateString('es-CO')}\n\n` +
-                    '👨‍💻 **Próximos Pasos:**\n' +
-                    '• Tu ticket será revisado por nuestro equipo técnico\n' +
-                    '• Recibirás actualizaciones por WhatsApp\n' +
-                    '• Tiempo estimado de respuesta: 2-4 horas\n' +
-                    '• Para consultar el estado, escribe "estado ticket"\n\n' +
-                    '📞 **¿Necesitas atención urgente?** Escribe "emergencia" para soporte inmediato.');
+                    '👨‍💻 **Tu reporte será atendido por nuestro equipo técnico**\n\n' +
+                    '¡Gracias por reportar tu falla!');
 
-                // Notificar internamente sobre el nuevo ticket
-                await this.ticketService.notifyNewTicket(ticketId, user.customerId!);
-
-                // Limpiar estado de sesión
-                this.resetTicketSession(session);
-
-                return true;
-
-            } catch (error) {
-                console.error('Error creating ticket:', error);
+            } catch (innerError) {
+                console.error('Error con sistema de tickets de respaldo:', innerError);
                 await this.messageService.sendTextMessage(user.phoneNumber,
-                    '❌ Error al crear el ticket. Por favor, intenta nuevamente en unos minutos.\n\n' +
-                    'Si el problema persiste, contacta directamente a nuestro equipo de soporte.');
-
-                this.resetTicketSession(session);
-                return true;
+                    '❌ Error al procesar tu reporte. Intenta nuevamente o contacta directamente a nuestro equipo de soporte al número 3242156679.');
             }
-        }
 
-        // Mensaje no reconocido en confirmación
-        await this.messageService.sendTextMessage(user.phoneNumber,
-            '❓ No entendí tu respuesta. Por favor, selecciona una de las opciones del menú.');
-        return true;
+            // Limpiar estado de sesión
+            this.resetTicketSession(session);
+            return true;
+        }
     }
 
     /**
@@ -372,24 +317,54 @@ export class TicketCreationFlow extends BaseConversationFlow {
         session.description = undefined;
         session.step = undefined;
         session.ticketData = undefined;
+        session.asunto = undefined;
     }
 
     /**
-     * Obtiene el nombre de visualización de una categoría
+     * Decodifica los datos del usuario desde la información almacenada
+     * Método específico para el flujo de tickets
      */
-    private getCategoryDisplayName(category: string): string {
-        const categoryNames: { [key: string]: string } = {
-            'sin_internet': 'Sin Internet',
-            'internet_lento': 'Internet Lento',
-            'intermitente': 'Conexión Intermitente',
-            'router_problema': 'Problema con Router',
-            'cables_dañados': 'Cables Dañados',
-            'configuracion': 'Configuración de Red',
-            'facturacion': 'Facturación',
-            'otro': 'Otro Problema',
-            'general': 'Problema General'
-        };
+    protected decodeUserData(user: User): any {
+        if (!user.customerId) {
+            return null;
+        }
 
-        return categoryNames[category] || 'Problema Técnico';
+        try {
+            // Intentar usar los datos de servicios del usuario primero
+            if (user.userServices && user.userServices.length > 0) {
+                const service = user.userServices[0];
+                return {
+                    id_servicio: service.id,
+                    customerName: service.name,
+                    status: service.status
+                };
+            }
+
+            // Intentar usar el método de la clase base si hay datos encriptados
+            if (user.encryptedData) {
+                const baseData = super.decodeUserData(user);
+                if (baseData) {
+                    // Los datos ya deberían tener id_servicio desde la autenticación
+                    if (!baseData.id_servicio && baseData.customerId) {
+                        baseData.id_servicio = baseData.customerId;
+                    }
+                    return baseData;
+                }
+            }
+
+            // Fallback
+            return {
+                id_servicio: user.customerId,
+                customerName: "Usuario",
+                status: "unknown"
+            };
+        } catch (error) {
+            console.error('Error decodificando datos de usuario:', error);
+            return {
+                id_servicio: user.customerId,
+                customerName: "Usuario",
+                status: "unknown"
+            };
+        }
     }
 }

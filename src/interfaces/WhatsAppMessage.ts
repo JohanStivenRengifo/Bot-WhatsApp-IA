@@ -63,22 +63,32 @@ export interface WhatsAppWebhookValue {
 export interface SessionData {
     // Flags de estado de flujos
     changingPassword: boolean;
-    creatingTicket: boolean;
-    handlingReactivation: boolean;
-
-    // Nuevos flags para flows
+    creatingTicket: boolean;    // Nuevos flags para flows
     flowActive?: string;
     selectedService?: 'ventas' | 'soporte';
     consultingInvoices?: boolean;
     upgradingPlan?: boolean;
-    verifyingPayment?: boolean;
     salesConversationStarted?: boolean;
 
+    // Flags para diagnóstico IP
+    diagnosticInProgress?: boolean;
+    diagnosticTaskId?: string;
+
+    // Flags para selección de servicio
+    awaitingServiceSelection?: boolean;
+
     // Datos del paso actual
-    step?: 'category' | 'description' | 'confirmation' | 'current_password' | 'new_password' | 'verify_password' | 'confirm_password' | 'service_selection' | 'payment_verification';
+    step?: 'category' | 'description' | 'confirmation' | 'current_password' | 'new_password' | 'verify_password' | 'confirm_password' | 'service_selection' | 'payment_verification' | 'plan_type_selection' | 'internet_plan_selection' | 'tv_plan_selection';
     category?: string;
     description?: string;
     newPassword?: string;
+    asunto?: string;
+
+    // Datos específicos para upgrade de planes
+    planType?: string; // 'upgrade_internet', 'add_tv', 'combo_plan'
+    planCategory?: string; // 'internet', 'tv', 'combo'
+    selectedPlanId?: string;
+    selectedTVPlanId?: string;
 
     // Datos de ticket
     ticketData?: {
