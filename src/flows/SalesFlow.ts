@@ -22,8 +22,15 @@ export class SalesFlow extends BaseConversationFlow {
         this.customerService = customerService;
     }    /**
      * Verifica si este flujo debe manejar el mensaje actual
-     */
-    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        const normalizedMessage = message.toLowerCase().trim();
+
+        // Excluir mensajes específicos de upgrade de plan que deben ir a PlanUpgradeFlow
+        const planUpgradeKeywords = ['mejorar_plan', 'plan_upgrade', 'upgrade_plan', 'mejora_plan'];
+        if (planUpgradeKeywords.some(keyword => normalizedMessage === keyword)) {
+            return false;
+        }
+
         return (
             // Usuario en flujo de ventas activo
             session.flowActive === 'sales' ||
@@ -31,12 +38,13 @@ export class SalesFlow extends BaseConversationFlow {
             (session.selectedService === 'ventas' && user.acceptedPrivacyPolicy) ||
             // Usuario dice "ventas" directamente
             message.toLowerCase().includes('ventas') ||
-            // Usuario solicita información de planes
-            message.toLowerCase().includes('plan') && user.acceptedPrivacyPolicy ||
+            // Usuario solicita información de planes (pero no upgrade específico)
+            (message.toLowerCase().includes('plan') && user.acceptedPrivacyPolicy &&
+                !planUpgradeKeywords.some(keyword => normalizedMessage.includes(keyword))) ||
             // Flujo activado automáticamente después de políticas
             session.salesConversationStarted === true
         );
-    }    /**
+    }/**
      * Maneja el proceso de ventas con IA
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -86,10 +94,19 @@ export class SalesFlow extends BaseConversationFlow {
                 });
 
                 return true;
+            }            // Verificar si el cliente solicita propuesta formal
+            if (message.toLowerCase().includes('propuesta formal') ||
+                message.toLowerCase().includes('propuesta') ||
+                message.toLowerCase().includes('cotización') ||
+                message.toLowerCase().includes('cotizacion')) {
+
+                // Generar y enviar PDF
+                await this.generateAndSendQuotation(user, session, message);
+                return true;
             }
 
             // Configurar el contexto de ventas para la IA
-            const salesContext = this.buildSalesContext(user, session);            // Obtener respuesta de la IA especializada en ventas
+            const salesContext = this.buildSalesContext(user, session);// Obtener respuesta de la IA especializada en ventas
             const aiResponse = await this.aiService.getSalesResponse(message, user, session.salesHistory);
 
             // Enviar la respuesta de la IA
@@ -116,105 +133,173 @@ export class SalesFlow extends BaseConversationFlow {
      * Construye el contexto de ventas para la IA
      */
     private buildSalesContext(user: User, session: SessionData): string {
+        // Verificar si ya se cerró una venta
+        const ventaCerrada = session.salesHistory?.some(item =>
+            item.user.toLowerCase().includes('propuesta formal') ||
+            item.user.toLowerCase().includes('contratar') ||
+            item.ai.toLowerCase().includes('te envío la propuesta') ||
+            item.ai.toLowerCase().includes('recibirás un correo')
+        );
+
         let context = `
 INFORMACIÓN DE LA EMPRESA:
-Eres Andrea, gerente de ventas de Conecta2 Telecomunicaciones en Piendamó, Cauca, Colombia.
+Eres Andrea, asesora comercial amigable de Conecta2 Telecomunicaciones en Piendamó, Cauca, Colombia.
 Empresa especializada en internet y televisión por fibra óptica.
 
-PLANES DE INTERNET DISPONIBLES:
+PLANES EXACTOS DISPONIBLES:
+
+INTERNET SOLO:
 • 30 Mbps: $40.000/mes
 • 50 Mbps: $50.000/mes  
 • 60 Mbps: $60.000/mes
 • 70 Mbps: $68.000/mes
 • 80 Mbps: $75.000/mes
 • 100 Mbps: $80.000/mes
-* Todos incluyen velocidad de subida de hasta 5 Mbps y soporte técnico
+* Todos incluyen velocidad de subida hasta 5 Mbps y soporte técnico
 
-PLANES DE TELEVISIÓN:
-• Plan TV HD: 90+ canales analógicos - $40.000/mes
-• Más de 85+ canales HD
-• App para ver TV en celular
-• Series y películas On Demand
+TELEVISIÓN SOLA:
+• Plan TV HD: $40.000/mes (90+ canales analógicos, 85+ canales HD, App móvil, On Demand)
 
-PAQUETES COMBINADOS:
-• Pack Básico: 30 Mbps + 85+ Canales HD - $60.000/mes (Ahorra $20.000)
-• Pack Estándar: 50 Mbps + 85+ Canales HD - $70.000/mes (Ahorra $20.000)  
-• Pack Premium: 100 Mbps + 85+ Canales HD - $100.000/mes (Ahorra $20.000)
+PAQUETES COMBINADOS (MUY POPULARES):
+• Pack Básico: Internet 30 Mbps + TV HD (85+ Canales) = $60.000/mes (Ahorro: $20.000)
+• Pack Estándar: Internet 50 Mbps + TV HD (85+ Canales) = $70.000/mes (Ahorro: $20.000)  
+• Pack Premium: Internet 100 Mbps + TV HD (85+ Canales) = $100.000/mes (Ahorro: $20.000)
 
-VENTAJAS COMPETITIVAS:
-- Fibra óptica 100% (no cobre)
-- Velocidad simétrica real
-- Soporte técnico 24/7
-- Instalación gratuita
-- Sin permanencia mínima
-- Cobertura total en Piendamó
+VENTAJAS:
+- Fibra óptica 100% - Soporte 24/7 - Sin permanencia
 
-TÉCNICAS DE VENTA:
-1. Sé muy persuasiva y entusiasta
-2. Haz preguntas sobre uso actual de internet
-3. Identifica necesidades (trabajo, estudio, streaming, gaming)
-4. Recomienda el plan ideal según uso
-5. Destaca el ahorro en paquetes combinados
-6. Crea urgencia con promociones limitadas
-7. Ofrece prueba gratuita de 7 días
-8. Facilita el proceso de contratación
+INSTRUCCIONES IMPORTANTES:
+${ventaCerrada ? `
+⚠️ EL CLIENTE YA SOLICITÓ UNA PROPUESTA FORMAL O CONTRATÓ UN SERVICIO.
+- NO sigas vendiendo
+- NO insistas con más ofertas
+- Confirma que recibirá la información solicitada
+- Agradece su interés y finaliza amablemente
+- Si pregunta algo más, responde brevemente y cierra la conversación
+` : `
+PROCESO DE VENTA:
+1. Saluda amigablemente y pregunta qué necesita
+2. Identifica su uso actual de internet/TV
+3. Recomienda el plan que mejor se adapte
+4. Si muestra interés, ofrece generar propuesta formal
+5. Cuando solicite propuesta formal, genera el PDF y finaliza
+6. Si dice "no" o "finalizar", agradece y termina cordialmente
 
-PERSONALIDAD: Muy amigable, persuasiva, conocedora, empática y enfocada en cerrar ventas.
+PERSONALIDAD: Amigable, natural, no insistente. Si el cliente no está interesado, respeta su decisión.
+`}
 
-ENLACES ÚTILES:
-- Web principal: https://conecta2telecomunicaciones.com/
+ENLACES:
+- Web: https://conecta2telecomunicaciones.com/
 - Planes: https://conecta2telecomunicaciones.com/planes-hogar
         `;
 
-        // Agregar historial de la conversación si existe
+        // Agregar historial reciente
         if (session.salesHistory && session.salesHistory.length > 0) {
-            context += '\n\nHISTORIAL DE CONVERSACIÓN:\n';
-            session.salesHistory.slice(-3).forEach(item => {
+            context += '\n\nHISTORIAL RECIENTE:\n';
+            session.salesHistory.slice(-2).forEach(item => {
                 context += `Cliente: ${item.user}\nAndrea: ${item.ai}\n\n`;
             });
         }
 
-        context += '\n\nResponde como Andrea, la gerente de ventas. Sé persuasiva, amigable y enfócate en cerrar la venta.';
-
         return context;
-    }
-
-    /**
+    }    /**
      * Genera mensaje de bienvenida personalizado para ventas
      */
     private async getWelcomeSalesMessage(): Promise<string> {
         const welcomeMessages = [
             `¡Hola! 😊 Soy Andrea, tu asesora comercial de Conecta2 Telecomunicaciones.
 
-🎉 ¡Qué alegría tenerte aquí! Estoy súper emocionada de ayudarte a encontrar el plan perfecto para ti.
+¡Me alegra mucho poder ayudarte! 
 
-En Conecta2 somos expertos en fibra óptica 100% - nada de cables viejos de cobre. Tenemos los mejores planes de internet y TV en Piendamó.
+Somos especialistas en fibra óptica aquí en Piendamó y tenemos planes súper buenos tanto de internet como de TV.
 
-💡 Para empezar, cuéntame:
-¿Qué uso le das principalmente al internet? 
-📱 Redes sociales y WhatsApp
-💻 Trabajo o estudio desde casa  
-🎮 Gaming y streaming
-📺 Netflix, YouTube, series
+Para poder recomendarte lo que mejor te convenga, cuéntame:
+¿Actualmente tienes internet en casa? ¿Qué tal te funciona?
 
-¡Con esta info te voy a recomendar el plan PERFECTO para ti! 🚀`,
+¡Así puedo darte la mejor opción! 🌟`,
 
-            `¡Hola! 🌟 Soy Andrea de Conecta2 Telecomunicaciones.
+            `¡Hola! 😊 Soy Andrea de Conecta2 Telecomunicaciones.
 
-¡Perfecto timing! Tenemos promociones increíbles en nuestros planes de fibra óptica.
+¡Qué bueno que estés interesado en nuestros servicios!
 
-🔥 ¿Sabías que con nuestros paquetes combinados puedes ahorrar hasta $20.000 al mes?
+Tenemos planes increíbles de internet fibra óptica y TV que realmente funcionan bien. 
 
-Por ejemplo:
-• Pack Básico: Internet 30MB + TV HD = $60.000 (en lugar de $80.000)
-• Pack Premium: Internet 100MB + TV HD = $100.000 (en lugar de $120.000)
+¿Me puedes contar qué tipo de servicio te interesa más?
+📡 Internet
+📺 TV  
+📦 Los dos juntos (tenemos ofertas geniales)
 
-Cuéntame, ¿actualmente tienes internet en casa? ¿Qué velocidad tienes y cuánto pagas?
-
-Te aseguro que puedo ofrecerte algo mucho mejor 😉`
+¡Te voy a dar las mejores opciones! ✨`
         ];
 
-        // Seleccionar mensaje aleatorio
         return welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+    }
+
+    /**
+     * Genera y envía cotización en PDF al cliente
+     */
+    private async generateAndSendQuotation(user: User, session: SessionData, message: string): Promise<void> {
+        try {
+            // Extraer información del plan solicitado del historial
+            const planInfo = this.extractPlanFromHistory(session.salesHistory || []);
+
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                `📋 ¡Perfecto! Te estoy preparando la cotización formal.
+                
+Plan seleccionado: ${planInfo.name}
+Precio: ${planInfo.price}
+                
+📧 Te enviaré la propuesta formal por correo electrónico en los próximos minutos con todos los detalles, términos y condiciones.
+
+🎉 ¡Gracias por confiar en Conecta2 Telecomunicaciones!
+
+Si tienes alguna pregunta sobre la propuesta, no dudes en contactarnos.`);
+
+            // Marcar que se envió la cotización
+            session.salesHistory = session.salesHistory || [];
+            session.salesHistory.push({
+                user: message,
+                ai: "Cotización formal enviada - Venta procesada",
+                timestamp: new Date()
+            });
+
+            // Simular envío de email (aquí se integraría con el servicio de email real)
+            console.log(`Cotización generada para ${user.phoneNumber} - Plan: ${planInfo.name}`);
+
+        } catch (error) {
+            console.error('Error generando cotización:', error);
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Hubo un problema generando la cotización. Un asesor se contactará contigo pronto.');
+        }
+    }
+
+    /**
+     * Extrae información del plan del historial de conversación
+     */
+    private extractPlanFromHistory(history: Array<{ user: string, ai: string }>): { name: string, price: string } {
+        // Buscar menciones de planes en el historial
+        const defaultPlan = { name: "Plan Premium (100 Mbps + TV HD)", price: "$100.000/mes" };
+
+        for (const item of history.reverse()) {
+            const text = (item.user + " " + item.ai).toLowerCase();
+
+            if (text.includes('premium')) {
+                return { name: "Pack Premium (100 Mbps + TV HD)", price: "$100.000/mes" };
+            }
+            if (text.includes('estándar') || text.includes('estandar')) {
+                return { name: "Pack Estándar (50 Mbps + TV HD)", price: "$70.000/mes" };
+            }
+            if (text.includes('básico') || text.includes('basico')) {
+                return { name: "Pack Básico (30 Mbps + TV HD)", price: "$60.000/mes" };
+            }
+            if (text.includes('100 mbps')) {
+                return { name: "Internet 100 Mbps", price: "$80.000/mes" };
+            }
+            if (text.includes('tv') && !text.includes('pack')) {
+                return { name: "Plan TV HD", price: "$40.000/mes" };
+            }
+        }
+
+        return defaultPlan;
     }
 }

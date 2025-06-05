@@ -38,20 +38,25 @@ export class AuthenticationFlow extends BaseConversationFlow {
      * Maneja el proceso de autenticación
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
-        try {
-            // Si está esperando un documento, verificar formato
-            if (user.awaitingDocument && !/^\d{6,12}$/.test(message)) {
+        try {        // Si está esperando un documento, verificar formato
+            if (user.awaitingDocument && !/^\d{1,12}$/.test(message)) {
                 await this.messageService.sendTextMessage(user.phoneNumber,
-                    '❌ El número de documento debe contener entre 6 y 12 dígitos numéricos.\n\n' +
-                    'Por favor, ingresa solo los números de tu documento de identidad:');
+                    '❌ El formato debe contener entre 1 y 12 dígitos numéricos.\n\n' +
+                    'Puedes ingresar:\n' +
+                    '• Tu número de cédula/documento de identidad\n' +
+                    '• Tu ID de servicio (número de cliente)\n\n' +
+                    'Por favor, ingresa solo los números (sin espacios ni guiones):');
                 return true;
             }
 
             // Si no está en modo de espera y el mensaje no es un documento válido
-            if (!user.awaitingDocument && !/^\d{6,12}$/.test(message)) {
+            if (!user.awaitingDocument && !/^\d{1,12}$/.test(message)) {
                 await this.messageService.sendTextMessage(user.phoneNumber,
-                    '❌ El número de documento debe contener entre 6 y 12 dígitos numéricos.\n\n' +
-                    'Por favor, ingresa solo los números de tu documento de identidad:');
+                    '❌ El formato debe contener entre 1 y 12 dígitos numéricos.\n\n' +
+                    'Puedes ingresar:\n' +
+                    '• Tu número de cédula/documento de identidad\n' +
+                    '• Tu ID de servicio (número de cliente)\n\n' +
+                    'Por favor, ingresa solo los números (sin espacios ni guiones):');
 
                 // Establecer modo de espera
                 user.awaitingDocument = true;
@@ -95,27 +100,27 @@ export class AuthenticationFlow extends BaseConversationFlow {
      */
     private async handleInactiveCustomer(user: User, customerData: any): Promise<void> {
         await this.messageService.sendTextMessage(user.phoneNumber,
-            `⚠️ Hola ${customerData.name},\n\n` +
+            `⚠️ Hola ${customerData.name && customerData.name !== 'Cliente' ? customerData.name : 'estimado(a) cliente'},\n\n` +
             `Hemos identificado que tu servicio se encuentra actualmente inactivo (Estado: ${customerData.status}).\n\n` +
             `Para reactivar tu servicio o resolver cualquier inconveniente con tu cuenta, por favor:\n\n` +
             `1️⃣ Contacta a nuestro equipo de atención al cliente\n` +
             `2️⃣ Verifica si tienes pagos pendientes\n` +
             `3️⃣ Consulta el estado de tu facturación\n\n` +
-            `¿Deseas que te ayude a revisar tu estado de cuenta?`);
-
-        // Crear sesión temporal
+            `¿Deseas que te ayude a revisar tu estado de cuenta?`);// Crear sesión temporal
         this.securityService.recordAuthAttempt(user.phoneNumber, true);
 
-        user.authenticated = true;
-        user.customerId = customerData.id;
+        user.authenticated = true; user.customerId = customerData.id;
         user.sessionId = this.securityService.createSession(user.phoneNumber);
         user.sessionExpiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 minutos
-        user.lastActivity = new Date();
-
-        // Guardar datos encriptados pero marcar como inactivo
+        user.lastActivity = new Date();        // Guardar datos encriptados pero marcar como inactivo
         user.encryptedData = this.securityService.encryptSensitiveData(JSON.stringify({
             customerId: customerData.id,
+            id_servicio: customerData.id,
             customerName: customerData.name,
+            ip_address: customerData.ip_address,
+            email: customerData.email,
+            document: customerData.document,
+            status: customerData.status,
             isInactive: true
         }));
 
@@ -127,25 +132,24 @@ export class AuthenticationFlow extends BaseConversationFlow {
      * Maneja autenticación exitosa de un cliente activo
      */
     private async handleSuccessfulAuthentication(user: User, customerData: any): Promise<void> {
-        this.securityService.recordAuthAttempt(user.phoneNumber, true);
-
-        user.authenticated = true;
+        this.securityService.recordAuthAttempt(user.phoneNumber, true); user.authenticated = true;
         user.customerId = customerData.id;
 
         // Crear sesión segura
         const sessionId = this.securityService.createSession(user.phoneNumber);
         user.sessionId = sessionId;
         user.sessionExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas
-        user.lastActivity = new Date();
-
-        // Encriptar datos sensibles
+        user.lastActivity = new Date();        // Encriptar datos sensibles con información completa del servicio
         user.encryptedData = this.securityService.encryptSensitiveData(JSON.stringify({
             customerId: customerData.id,
-            customerName: customerData.name
-        }));
-
-        await this.messageService.sendTextMessage(user.phoneNumber,
-            `✅ ¡Hola ${customerData.name}!\n\n` +
+            id_servicio: customerData.id,
+            customerName: customerData.name,
+            ip_address: customerData.ip_address,
+            email: customerData.email,
+            document: customerData.document,
+            status: customerData.status
+        })); await this.messageService.sendTextMessage(user.phoneNumber,
+            `✅ ¡Hola ${customerData.name && customerData.name !== 'Cliente' ? customerData.name : 'estimado(a) cliente'}!\n\n` +
             'Autenticación exitosa. Tu sesión estará activa por 2 horas.\n\n' +
             '🔒 Sesión segura iniciada\n' +
             '⏰ Expiración automática por seguridad');
@@ -168,10 +172,12 @@ export class AuthenticationFlow extends BaseConversationFlow {
                 'Si necesitas ayuda inmediata, contacta a nuestro equipo de soporte.');
         } else {
             await this.messageService.sendTextMessage(user.phoneNumber,
-                `❌ No pude encontrar tu información o tu servicio no está activo.\n\n` +
-                `Verifica tu número de documento e intenta nuevamente.\n\n` +
+                `❌ No pude encontrar tu información con esos datos.\n\n` +
+                `Verifica que hayas ingresado correctamente:\n` +
+                `• Tu número de cédula/documento de identidad, O\n` +
+                `• Tu ID de servicio (número de cliente)\n\n` +
                 `⚠️ Intentos restantes: ${remainingAttempts}\n\n` +
-                `Escribe "ayuda" para contactar a un agente.`);
+                `Si continúas teniendo problemas, escribe "ayuda" para contactar a un agente.`);
         }
     }
 }

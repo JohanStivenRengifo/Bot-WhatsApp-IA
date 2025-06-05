@@ -1,217 +1,141 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
-import { MessageService, SecurityService, CustomerService } from '../services';
+import { MessageService, SecurityService, CustomerService, TicketService } from '../services';
 
 /**
- * Flujo para actualización/upgrade de planes con análisis de plan actual
+ * Flujo completamente autónomo para mejora de planes de internet y adición de planes de TV
+ * No utiliza SalesFlow ni servicios de IA - Maneja todo internamente
  */
 export class PlanUpgradeFlow extends BaseConversationFlow {
     readonly name: string = 'planUpgrade';
 
     private customerService: CustomerService;
+    private ticketService: TicketService;
+
+    // Planes de internet disponibles - configuración estática para autonomía
+    private readonly internetPlans = [
+        { id: 'plan_30', name: '30 Mbps', speed: '50/20 Mbps', price: 40000, description: 'Ideal para uso básico y navegación' },
+        { id: 'plan_50', name: '50 Mbps', speed: '100/50 Mbps', price: 50000, description: 'Perfecto para familias y trabajo remoto' },
+        { id: 'plan_60', name: '60 Mbps', speed: '200/100 Mbps', price: 60000, description: 'Excelente para gaming y streaming' },
+        { id: 'plan_70', name: '70 Mbps', speed: '300/150 Mbps', price: 68000, description: 'Velocidad premium para empresas' },
+        { id: 'plan_80', name: '80 Mbps', speed: '500/250 Mbps', price: 75000, description: 'Ultra velocidad para uso intensivo' },
+        { id: 'plan_100', name: '100 Mbps', speed: '1000/500 Mbps', price: 80000, description: 'Máxima velocidad para hogares' }
+    ];
+
+    // Planes de TV disponibles - configuración estática para autonomía
+    private readonly tvPlans = [
+        { id: 'tv_hd', name: 'TV Completo', channels: '80+ canales HD', price: 4000, description: '+85 Canales en HD' }
+    ];
+
+    // Combos disponibles con descuentos especiales
+    private readonly comboPlan = [
+        { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 85000, comboPrice: 60000, discount: 10000 },
+        { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 135000, comboPrice: 70000, discount: 15000 },
+        { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 195000, comboPrice: 100000, discount: 15000 }
+    ];
 
     constructor(
         messageService: MessageService,
         securityService: SecurityService,
-        customerService: CustomerService
+        customerService: CustomerService,
+        ticketService: TicketService
     ) {
         super(messageService, securityService);
         this.customerService = customerService;
-    }
-
-    /**
+        this.ticketService = ticketService;
+    }    /**
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Este flujo maneja únicamente mejoras de plan autónomas
         return (
             user.authenticated &&
             (message === 'mejorar_plan' ||
+                message === 'plan_upgrade' ||
                 message === 'upgrade_plan' ||
-                message === 'cambiar_plan' ||
-                message === 'planes_disponibles' ||
+                message === 'mejora_plan' ||
                 session.upgradingPlan === true)
         );
-    }
-
-    /**
-     * Maneja el proceso de upgrade de planes
+    }    /**
+     * Maneja el proceso completo de mejora de planes de forma autónoma
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
         try {
+            // Verificar que el usuario tenga servicio activo
+            const userData = this.decodeUserData(user);
+            if (userData?.isInactive) {
+                await this.messageService.sendTextMessage(user.phoneNumber,
+                    '⚠️ Tu servicio está actualmente inactivo.\n\n' +
+                    'Para solicitar cambios de plan, primero debes regularizar tu cuenta.\n\n' +
+                    'Te recomendamos:\n' +
+                    '1️⃣ Verificar el estado de tu facturación\n' +
+                    '2️⃣ Realizar el pago pendiente si lo hubiera\n' +
+                    '3️⃣ Contactar a nuestro equipo de atención al cliente');
+                return true;
+            }
+
+            // Inicializar flujo si no está activo
             if (!session.upgradingPlan) {
                 return await this.initializePlanUpgrade(user, session);
             }
 
-            // Procesar según el paso actual
+            // Procesar según el paso actual del flujo
             switch (session.step) {
-                case 'service_selection':
-                    return await this.handleServiceSelection(user, message, session);
+                case 'plan_type_selection':
+                    return await this.handlePlanTypeSelection(user, message, session);
+                case 'internet_plan_selection':
+                    return await this.handleInternetPlanSelection(user, message, session);
+                case 'tv_plan_selection':
+                    return await this.handleTVPlanSelection(user, message, session);
                 case 'confirmation':
-                    return await this.handleUpgradeConfirmation(user, message, session);
+                    return await this.handleConfirmation(user, message, session);
                 default:
                     return await this.initializePlanUpgrade(user, session);
             }
 
         } catch (error) {
-            console.error('Error en flujo de upgrade de plan:', error);
+            console.error('Error en flujo de mejora de plan:', error);
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Error procesando la solicitud de upgrade. Contacta a nuestro equipo comercial.');
+                '❌ Ha ocurrido un error al procesar tu solicitud. Por favor, intenta nuevamente.');
 
-            this.resetUpgradeSession(session);
+            // Limpiar estado de sesión
+            this.resetPlanUpgradeSession(session);
             return true;
         }
-    }
-
-    /**
-     * Inicializa el proceso de upgrade de plan
+    }    /**
+     * Inicializa el proceso de mejora de plan obteniendo información real del cliente
      */
     private async initializePlanUpgrade(user: User, session: SessionData): Promise<boolean> {
-        session.upgradingPlan = true;
+        // Obtener información actual del cliente
+        let clientName = "cliente";
+        let currentPlan = "No disponible";
 
-        // Verificar servicios del usuario
-        const userServices = await this.getUserServices(user);
-
-        if (userServices.length === 0) {
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ No encontré servicios activos en tu cuenta.\n\n' +
-                'Por favor, contacta a nuestro equipo comercial para más información.');
-
-            this.resetUpgradeSession(session);
-            return true;
-        }
-
-        if (userServices.length === 1) {
-            // Usuario con un solo servicio
-            return await this.showUpgradeOptions(user, userServices[0], session);
-        } else {
-            // Usuario con múltiples servicios
-            return await this.showServiceSelection(user, userServices, session);
-        }
-    }
-
-    /**
-     * Muestra selección de servicios para usuarios multi-servicio
-     */
-    private async showServiceSelection(user: User, services: any[], session: SessionData): Promise<boolean> {
-        session.step = 'service_selection';
-        session.availableServices = services;
-
-        const servicesList = services.map((service, index) => ({
-            id: service.id,
-            title: `📍 ${service.location}`,
-            description: `${service.plan} - ${service.status}`
-        }));
-
-        const selectionMessage = {
-            messaging_product: 'whatsapp',
-            to: user.phoneNumber,
-            type: 'interactive',
-            interactive: {
-                type: 'list',
-                header: {
-                    type: 'text',
-                    text: '🏠 Seleccionar Servicio'
-                },
-                body: {
-                    text: 'Tienes múltiples servicios. ¿Para cuál deseas consultar opciones de upgrade?'
-                },
-                action: {
-                    button: 'Seleccionar',
-                    sections: [
-                        {
-                            title: 'Tus Servicios',
-                            rows: servicesList
-                        }
-                    ]
+        try {
+            // Obtener nombre del cliente de los datos encriptados
+            if (user.encryptedData) {
+                const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
+                if (decryptedData.customerName) {
+                    clientName = decryptedData.customerName.split(' ')[0];
                 }
             }
-        };
 
-        await this.messageService.sendMessage(selectionMessage);
-        return true;
-    }
+            // Obtener plan actual del cliente desde WispHub
+            const planData = await this.customerService.getCustomerPlan(user.customerId!);
+            if (planData) {
+                currentPlan = `${planData.name} - ${planData.speed} - $${planData.price.toLocaleString()}`;
+            }
 
-    /**
-     * Maneja la selección de servicio
-     */
-    private async handleServiceSelection(user: User, message: string, session: SessionData): Promise<boolean> {
-        const selectedService = session.availableServices?.find(service => service.id === message);
-
-        if (!selectedService) {
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Servicio no válido. Por favor, selecciona una opción del menú.');
-            return true;
+        } catch (error) {
+            console.error('Error obteniendo información del cliente:', error);
+            currentPlan = "No se pudo obtener información del plan actual";
         }
 
-        session.selectedServiceId = message;
-        return await this.showUpgradeOptions(user, selectedService, session);
-    }
+        // Activar el flujo de mejora de plan
+        session.upgradingPlan = true;
+        session.step = 'plan_type_selection';
 
-    /**
-     * Muestra las opciones de upgrade disponibles
-     */
-    private async showUpgradeOptions(user: User, currentService: any, session: SessionData): Promise<boolean> {
-        const availableUpgrades = await this.getAvailableUpgrades(currentService);
-
-        if (availableUpgrades.length === 0) {
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '🎯 **Ya tienes nuestro mejor plan disponible**\n\n' +
-                `📊 Plan actual: ${currentService.plan}\n` +
-                `🚀 Velocidad: ${currentService.speed}\n` +
-                `💰 Valor: $${currentService.price?.toLocaleString()}\n\n` +
-                '🎉 ¡Gracias por confiar en nuestro servicio premium!\n\n' +
-                '💡 Si necesitas mayor velocidad, consulta por nuestros planes empresariales escribiendo "planes_empresariales".');
-
-            this.resetUpgradeSession(session);
-            return true;
-        }
-
-        // Analizar patrón de uso para recomendaciones personalizadas
-        const usageAnalysis = await this.analyzeUsagePattern(user.customerId!);
-        const recommendation = this.getPersonalizedRecommendation(availableUpgrades, usageAnalysis);
-
-        let upgradeMessage = `⬆️ **Opciones de Upgrade Disponibles**\n\n` +
-            `📊 **Plan actual:** ${currentService.plan}\n` +
-            `🚀 **Velocidad actual:** ${currentService.speed}\n` +
-            `💰 **Precio actual:** $${currentService.price?.toLocaleString()}\n\n`;
-
-        if (recommendation) {
-            upgradeMessage += `💡 **Recomendación personalizada:** ${recommendation.reason}\n\n`;
-        }
-
-        upgradeMessage += `**Planes disponibles:**\n\n`;
-
-        const upgradeButtons = availableUpgrades.slice(0, 3).map((plan, index) => {
-            const discount = this.calculateUpgradeDiscount(currentService.price, plan.price);
-            const isRecommended = recommendation && recommendation.planId === plan.id;
-
-            upgradeMessage += `${isRecommended ? '⭐' : `${index + 1}.`} **${plan.name}**\n` +
-                `   🚀 Velocidad: ${plan.speed}\n` +
-                `   💰 Precio: $${plan.price.toLocaleString()}` +
-                (discount > 0 ? ` (${discount}% descuento primer mes)` : '') + '\n' +
-                `   📝 ${plan.description}\n\n`;
-
-            return {
-                type: 'reply',
-                reply: {
-                    id: `upgrade_${plan.id}`,
-                    title: `${isRecommended ? '⭐' : '📈'} ${plan.name}`
-                }
-            };
-        });
-
-        upgradeMessage += '🎁 **Beneficios del upgrade:**\n' +
-            '• Instalación gratuita\n' +
-            '• Mantienes tu número IP\n' +
-            '• Sin permanencia adicional\n' +
-            '• Soporte técnico prioritario\n\n' +
-            'Selecciona el plan que más te convenga:';
-
-        // Enviar mensaje con información
-        await this.messageService.sendTextMessage(user.phoneNumber, upgradeMessage);
-
-        // Enviar botones de selección
-        const buttonMessage = {
+        // Menú interactivo principal con opciones de mejora
+        const planTypeMenu = {
             messaging_product: 'whatsapp',
             to: user.phoneNumber,
             type: 'interactive',
@@ -219,148 +143,507 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
                 type: 'button',
                 header: {
                     type: 'text',
-                    text: '📈 Seleccionar Plan'
+                    text: '⬆️ Mejora tu Servicio'
                 },
                 body: {
-                    text: '¿Cuál plan te interesa?'
+                    text: `Hola ${clientName}, vamos a mejorar tu plan de servicios.\n\n` +
+                        `📊 **Tu plan actual:**\n${currentPlan}\n\n` +
+                        `¿Qué tipo de mejora te interesa?`
+                },
+                footer: {
+                    text: 'Conecta2 Telecomunicaciones - Siempre conectados'
                 },
                 action: {
-                    buttons: upgradeButtons
+                    buttons: [
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'upgrade_internet',
+                                title: '🚀 Mejorar Internet'
+                            }
+                        },
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'add_tv',
+                                title: '📺 Agregar TV'
+                            }
+                        },
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'combo_plan',
+                                title: '📦 Plan Combo'
+                            }
+                        }
+                    ]
                 }
             }
         };
 
-        await this.messageService.sendMessage(buttonMessage);
+        await this.messageService.sendMessage(planTypeMenu);
+        return true;
+    }    /**
+     * Maneja la selección del tipo de plan de forma inteligente
+     */
+    private async handlePlanTypeSelection(user: User, message: string, session: SessionData): Promise<boolean> {
+        const validSelections = ['upgrade_internet', 'add_tv', 'combo_plan'];
 
+        if (!validSelections.includes(message)) {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Opción no válida. Por favor, selecciona una opción del menú anterior.');
+            return true;
+        }
+
+        // Guardar la selección en la sesión
+        session.planType = message;
+
+        // Redirigir según el tipo seleccionado
+        switch (message) {
+            case 'upgrade_internet':
+                return await this.showInternetUpgradeOptions(user, session);
+            case 'add_tv':
+                return await this.showTVPlanOptions(user, session);
+            case 'combo_plan':
+                return await this.showComboPlanOptions(user, session);
+            default:
+                await this.messageService.sendTextMessage(user.phoneNumber,
+                    '❌ Selección no reconocida. Iniciando proceso nuevamente...');
+                return await this.initializePlanUpgrade(user, session);
+        }
+    }    /**
+     * Muestra opciones de mejora de internet usando los planes configurados
+     */
+    private async showInternetUpgradeOptions(user: User, session: SessionData): Promise<boolean> {
+        session.step = 'internet_plan_selection';
+
+        // Obtener plan actual para mostrar solo planes superiores
+        let currentSpeed = 0;
+        try {
+            const currentPlan = await this.customerService.getCustomerPlan(user.customerId!);
+            if (currentPlan && currentPlan.speed) {
+                // Extraer velocidad del string "100/50 Mbps"
+                const speedMatch = currentPlan.speed.match(/(\d+)/);
+                if (speedMatch) {
+                    currentSpeed = parseInt(speedMatch[1]);
+                }
+            }
+        } catch (error) {
+            console.error('Error obteniendo plan actual:', error);
+        }
+
+        // Filtrar planes superiores al actual
+        const availablePlans = this.internetPlans.filter(plan => {
+            const planSpeed = parseInt(plan.speed.split('/')[0]);
+            return planSpeed > currentSpeed;
+        });
+
+        if (availablePlans.length === 0) {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '🎉 ¡Excelente! Ya tienes nuestro plan de mayor velocidad.\n\n' +
+                'Si necesitas más velocidad, nuestro equipo comercial puede evaluar opciones empresariales especiales.\n\n' +
+                '¿Te gustaría que te contacten para evaluar opciones personalizadas?');
+
+            session.step = 'confirmation';
+            session.selectedPlanId = 'enterprise_contact';
+            return true;
+        }
+
+        // Crear lista interactiva con planes disponibles
+        const sections = [{
+            title: 'Planes Disponibles',
+            rows: availablePlans.map(plan => ({
+                id: plan.id,
+                title: `🚀 ${plan.name}`,
+                description: `${plan.speed} - $${plan.price.toLocaleString()}/mes`
+            }))
+        }];
+
+        const internetPlansMenu = {
+            messaging_product: 'whatsapp',
+            to: user.phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                header: {
+                    type: 'text',
+                    text: '🚀 Planes de Internet Disponibles'
+                },
+                body: {
+                    text: 'Selecciona el plan de internet que mejor se adapte a tus necesidades:\n\n' +
+                        '✅ Todos los planes incluyen:\n' +
+                        '• Fibra óptica de alta velocidad\n' +
+                        '• Sin límite de datos\n' +
+                        '• Soporte técnico 24/7\n' +
+                        '• Instalación sin costo'
+                },
+                footer: {
+                    text: 'Mejora disponible desde hoy'
+                },
+                action: {
+                    button: 'Seleccionar Plan',
+                    sections: sections
+                }
+            }
+        };
+
+        await this.messageService.sendMessage(internetPlansMenu);
+        return true;
+    }    /**
+     * Muestra opciones de planes de TV usando la configuración estática
+     */
+    private async showTVPlanOptions(user: User, session: SessionData): Promise<boolean> {
+        session.step = 'tv_plan_selection';
+
+        // Crear lista interactiva con planes de TV disponibles
+        const sections = [{
+            title: 'Planes de TV Disponibles',
+            rows: this.tvPlans.map(plan => ({
+                id: plan.id,
+                title: `📺 ${plan.name}`,
+                description: `${plan.channels} - $${plan.price.toLocaleString()}/mes`
+            }))
+        }];
+
+        const tvPlansMenu = {
+            messaging_product: 'whatsapp',
+            to: user.phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                header: {
+                    type: 'text',
+                    text: '📺 Planes de Televisión'
+                },
+                body: {
+                    text: 'Selecciona el plan de TV que más te guste:\n\n' +
+                        '✅ Todos los planes incluyen:\n' +
+                        '• Señal en alta definición (HD)\n' +
+                        '• Decodificador incluido\n' +
+                        '• Instalación sin costo\n' +
+                        '• Soporte técnico 24/7'
+                },
+                footer: {
+                    text: 'Disfruta del mejor entretenimiento'
+                },
+                action: {
+                    button: 'Seleccionar TV',
+                    sections: sections
+                }
+            }
+        };
+
+        await this.messageService.sendMessage(tvPlansMenu);
+        return true;
+    }    /**
+     * Muestra opciones de planes combo con descuentos especiales
+     */
+    private async showComboPlanOptions(user: User, session: SessionData): Promise<boolean> {
+        session.step = 'internet_plan_selection'; // Reutilizamos el mismo paso para combos
+
+        // Crear lista interactiva con combos disponibles
+        const sections = [{
+            title: 'Combos Disponibles',
+            rows: this.comboPlan.map(combo => ({
+                id: combo.id,
+                title: `📦 ${combo.name}`,
+                description: `${combo.description} - $${combo.comboPrice.toLocaleString()}/mes (Ahorras $${combo.discount.toLocaleString()})`
+            }))
+        }];
+
+        const comboPlansMenu = {
+            messaging_product: 'whatsapp',
+            to: user.phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                header: {
+                    type: 'text',
+                    text: '📦 Planes Combo - ¡Ofertas Especiales!'
+                },
+                body: {
+                    text: '¡Aprovecha nuestros descuentos en planes combo!\n\n' +
+                        'Internet + TV con beneficios especiales:\n\n' +
+                        '✅ Beneficios incluidos:\n' +
+                        '• Descuento especial por combo\n' +
+                        '• Una sola factura\n' +
+                        '• Instalación sin costo\n' +
+                        '• Soporte técnico integral'
+                },
+                footer: {
+                    text: 'Ahorra hasta $25.000 al mes'
+                },
+                action: {
+                    button: 'Seleccionar Combo',
+                    sections: sections
+                }
+            }
+        };
+
+        await this.messageService.sendMessage(comboPlansMenu);
+        return true;
+    }    /**
+     * Maneja la selección de planes de internet y combos usando configuración estática
+     */
+    private async handleInternetPlanSelection(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Buscar en planes de internet
+        let selectedPlan = this.internetPlans.find(plan => plan.id === message);
+        let planType = 'internet';
+
+        // Si no se encuentra, buscar en combos
+        if (!selectedPlan) {
+            const selectedCombo = this.comboPlan.find(combo => combo.id === message);
+            if (selectedCombo) {
+                selectedPlan = {
+                    id: selectedCombo.id,
+                    name: selectedCombo.name,
+                    speed: selectedCombo.description,
+                    price: selectedCombo.comboPrice,
+                    description: `Ahorro de $${selectedCombo.discount.toLocaleString()} vs planes separados`
+                };
+                planType = 'combo';
+            }
+        }
+
+        // Manejar caso especial de contacto empresarial
+        if (message === 'enterprise_contact') {
+            session.selectedPlanId = message;
+            session.step = 'confirmation';
+
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '🏢 **Contacto Empresarial Solicitado**\n\n' +
+                'Perfecto, nuestro equipo comercial se pondrá en contacto contigo para evaluar opciones empresariales personalizadas.\n\n' +
+                '¿Confirmas que deseas que te contacten para evaluar planes empresariales?\n\n' +
+                'Responde "**confirmar**" para proceder o "**cancelar**" para terminar.');
+            return true;
+        }
+
+        if (!selectedPlan) {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Opción no válida. Por favor, selecciona una opción del menú.');
+            return true;
+        }
+
+        session.selectedPlanId = message;
         session.step = 'confirmation';
+
+        // Construir mensaje de confirmación
+        let confirmationMessage = `✅ **Plan Seleccionado:**\n\n`;
+        confirmationMessage += `📋 **Nombre:** ${selectedPlan.name}\n`;
+        confirmationMessage += `🚀 **Descripción:** ${selectedPlan.speed}\n`;
+        confirmationMessage += `💰 **Precio:** $${selectedPlan.price.toLocaleString()}/mes\n`;
+
+        if (planType === 'combo' && selectedPlan.description) {
+            confirmationMessage += `💡 **Beneficio:** ${selectedPlan.description}\n`;
+        }
+
+        confirmationMessage += `\n¿Confirmas que deseas solicitar este ${planType === 'combo' ? 'combo' : 'plan'}?\n\n`;
+        confirmationMessage += `Responde "**confirmar**" para proceder o "**cancelar**" para terminar.`;
+
+        await this.messageService.sendTextMessage(user.phoneNumber, confirmationMessage);
+        return true;
+    }    /**
+     * Maneja la selección de planes de TV usando configuración estática
+     */
+    private async handleTVPlanSelection(user: User, message: string, session: SessionData): Promise<boolean> {
+        const selectedTVPlan = this.tvPlans.find(plan => plan.id === message);
+
+        if (!selectedTVPlan) {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Opción no válida. Por favor, selecciona una opción del menú.');
+            return true;
+        }
+
+        session.selectedTVPlanId = message;
+        session.step = 'confirmation';
+
+        // Mostrar confirmación
+        await this.messageService.sendTextMessage(user.phoneNumber,
+            `✅ **Plan de TV Seleccionado:**\n\n` +
+            `📺 **Nombre:** ${selectedTVPlan.name}\n` +
+            `📡 **Canales:** ${selectedTVPlan.channels}\n` +
+            `💰 **Precio:** $${selectedTVPlan.price.toLocaleString()}/mes\n` +
+            `🎯 **Descripción:** ${selectedTVPlan.description}\n\n` +
+            `¿Confirmas que deseas agregar este plan de TV?\n\n` +
+            `Responde "**confirmar**" para proceder o "**cancelar**" para terminar.`);
+
         return true;
     }
 
     /**
-     * Maneja la confirmación de upgrade
+     * Maneja la confirmación final
      */
-    private async handleUpgradeConfirmation(user: User, message: string, session: SessionData): Promise<boolean> {
-        if (!message.startsWith('upgrade_')) {
+    private async handleConfirmation(user: User, message: string, session: SessionData): Promise<boolean> {
+        const messageText = message.toLowerCase().trim();
+
+        if (messageText === 'confirmar' || messageText === 'si' || messageText === 'sí') {
+            // Crear ticket para el cambio de plan
+            await this.createPlanChangeTicket(user, session);
+            return true;
+        } else if (messageText === 'cancelar' || messageText === 'no') {
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❓ Por favor, selecciona una de las opciones de upgrade del menú.');
+                '❌ Solicitud cancelada.\n\n' +
+                'Si cambias de opinión, puedes solicitar una mejora de plan en cualquier momento desde el menú principal.');
+
+            this.resetPlanUpgradeSession(session);
+            return true;
+        } else {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❓ Por favor, responde "**confirmar**" para proceder o "**cancelar**" para terminar.');
             return true;
         }
-
-        const planId = message.replace('upgrade_', '');
-        const selectedPlan = await this.getPlanDetails(planId);
-
-        if (!selectedPlan) {
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Plan no encontrado. Por favor, intenta nuevamente.');
-            return true;
-        }
-
-        // Procesar la solicitud de upgrade
-        try {
-            const upgradeResult = await this.processUpgradeRequest(user, selectedPlan, session);
-
-            if (upgradeResult.success) {
-                await this.sendUpgradeConfirmation(user, selectedPlan, upgradeResult);
-            } else {
-                await this.sendUpgradeError(user, upgradeResult.error);
-            }
-
-            this.resetUpgradeSession(session);
-            return true;
-
-        } catch (error) {
-            console.error('Error procesando upgrade:', error);
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Error procesando el upgrade. Por favor, contacta a nuestro equipo comercial.');
-
-            this.resetUpgradeSession(session);
-            return true;
-        }
-    }
-
-    /**
-     * Obtiene los servicios del usuario
+    }    /**
+     * Crea un ticket detallado para el cambio de plan usando información específica
      */
-    private async getUserServices(user: User): Promise<any[]> {
+    private async createPlanChangeTicket(user: User, session: SessionData): Promise<void> {
         try {
-            // En implementación real, esto consultaría WispHub API
-            return [
-                {
-                    id: 'service_1',
-                    location: 'Dirección Principal',
-                    plan: 'Plan Hogar 30MB',
-                    speed: '30/10 Mbps',
-                    price: 78900,
-                    status: 'Activo'
+            let clientName = "cliente";
+            if (user.encryptedData) {
+                try {
+                    const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
+                    if (decryptedData.customerName) {
+                        clientName = decryptedData.customerName;
+                    }
+                } catch (error) {
+                    console.error('Error decrypting user data:', error);
                 }
-            ];
+            }
+
+            // Obtener información detallada del plan actual
+            let currentPlanInfo = "No disponible";
+            try {
+                const currentPlan = await this.customerService.getCustomerPlan(user.customerId!);
+                if (currentPlan) {
+                    currentPlanInfo = `${currentPlan.name} - ${currentPlan.speed} - $${currentPlan.price.toLocaleString()}`;
+                }
+            } catch (error) {
+                console.error('Error obteniendo plan actual:', error);
+            }
+
+            // Construir descripción detallada del ticket
+            let ticketDescription = `SOLICITUD DE CAMBIO DE PLAN - WHATSAPP BOT\n`;
+            ticketDescription += `${'='.repeat(50)}\n\n`;
+
+            ticketDescription += `📋 INFORMACIÓN DEL CLIENTE:\n`;
+            ticketDescription += `• Nombre: ${clientName}\n`;
+            ticketDescription += `• Teléfono: ${user.phoneNumber}\n`;
+            ticketDescription += `• ID Cliente: ${user.customerId}\n`;
+            ticketDescription += `• Plan Actual: ${currentPlanInfo}\n\n`;
+
+            ticketDescription += `🎯 SOLICITUD:\n`;
+            ticketDescription += `• Tipo: ${this.getPlanTypeDescription(session.planType)}\n`;
+
+            // Agregar detalles del plan solicitado
+            if (session.selectedPlanId) {
+                const planDetails = this.getPlanDetails(session.selectedPlanId);
+                if (planDetails) {
+                    ticketDescription += `• Plan Solicitado: ${planDetails.name}\n`;
+                    ticketDescription += `• Descripción: ${planDetails.description}\n`;
+                    ticketDescription += `• Precio: $${planDetails.price.toLocaleString()}/mes\n`;
+                }
+            }
+
+            if (session.selectedTVPlanId) {
+                const tvPlanDetails = this.tvPlans.find(plan => plan.id === session.selectedTVPlanId);
+                if (tvPlanDetails) {
+                    ticketDescription += `• Plan TV Solicitado: ${tvPlanDetails.name}\n`;
+                    ticketDescription += `• Canales: ${tvPlanDetails.channels}\n`;
+                    ticketDescription += `• Precio TV: $${tvPlanDetails.price.toLocaleString()}/mes\n`;
+                }
+            }
+
+            ticketDescription += `\n📅 DETALLES DE SOLICITUD:\n`;
+            ticketDescription += `• Fecha: ${new Date().toLocaleDateString('es-CO')}\n`;
+            ticketDescription += `• Hora: ${new Date().toLocaleTimeString('es-CO')}\n`;
+            ticketDescription += `• Canal: WhatsApp Bot\n`;
+            ticketDescription += `• Estado: Pendiente de contacto comercial\n\n`;
+
+            ticketDescription += `📞 ACCIONES REQUERIDAS:\n`;
+            if (session.selectedPlanId === 'enterprise_contact') {
+                ticketDescription += `• Contactar cliente para evaluar opciones empresariales\n`;
+                ticketDescription += `• Preparar propuesta personalizada\n`;
+            } else {
+                ticketDescription += `• Contactar cliente para confirmar cambio\n`;
+                ticketDescription += `• Coordinar instalación si es necesaria\n`;
+                ticketDescription += `• Actualizar plan en sistema\n`;
+            }
+
+            // Crear el ticket usando el TicketService
+            const ticketData = {
+                subject: session.selectedPlanId === 'enterprise_contact'
+                    ? 'Solicitud Consulta Empresarial - WhatsApp'
+                    : 'Solicitud de Cambio de Plan - WhatsApp',
+                description: ticketDescription,
+                priority: 'media' as const,
+                category: 'Cambio de Plan',
+                customerId: user.customerId!,
+                source: 'whatsapp',
+                clientInfo: {
+                    name: clientName,
+                    phone: user.phoneNumber
+                }
+            };
+
+            await this.ticketService.createTicket(ticketData);
+
+            // Enviar confirmación personalizada al cliente
+            await this.sendConfirmationMessage(user, session);
+
         } catch (error) {
-            console.error('Error obteniendo servicios:', error);
-            return [];
+            console.error('Error creando ticket de cambio de plan:', error);
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '❌ Error al enviar la solicitud. Por favor, intenta nuevamente o contacta a nuestro equipo de soporte.');
+        } finally {            // Limpiar sesión
+            this.resetPlanUpgradeSession(session);
         }
     }
 
     /**
-     * Obtiene los upgrades disponibles para un servicio
+     * Obtiene descripción del tipo de plan para el ticket
      */
-    private async getAvailableUpgrades(currentService: any): Promise<any[]> {
-        const allPlans = [
-            {
-                id: 'plan_50',
-                name: 'Plan Hogar 50MB',
-                speed: '50/20 Mbps',
-                price: 98900,
-                description: 'Ideal para familias que usan streaming y gaming'
-            },
-            {
-                id: 'plan_100',
-                name: 'Plan Hogar 100MB',
-                speed: '100/50 Mbps',
-                price: 138900,
-                description: 'Máximo rendimiento para trabajo remoto y entretenimiento'
-            },
-            {
-                id: 'plan_200',
-                name: 'Plan Ultra 200MB',
-                speed: '200/100 Mbps',
-                price: 198900,
-                description: 'Para usuarios avanzados y múltiples dispositivos'
-            }
-        ];
-
-        // Filtrar planes superiores al actual
-        return allPlans.filter(plan => plan.price > currentService.price);
+    private getPlanTypeDescription(planType: string | undefined): string {
+        switch (planType) {
+            case 'upgrade_internet':
+                return 'Mejora de Plan de Internet';
+            case 'add_tv':
+                return 'Adición de Plan de TV';
+            case 'combo_plan':
+                return 'Plan Combo (Internet + TV)';
+            default:
+                return 'Cambio de Plan';
+        }
     }
 
     /**
-     * Analiza patrón de uso del cliente
+     * Obtiene detalles completos de un plan por su ID
      */
-    private async analyzeUsagePattern(customerId: string): Promise<any> {
-        // Simular análisis de uso
-        return {
-            averageUsage: 80, // Porcentaje de uso promedio
-            peakHours: ['19:00-23:00'],
-            devices: 8,
-            streamingUsage: 'high',
-            gamingUsage: 'medium'
-        };
-    }
-
-    /**
-     * Obtiene recomendación personalizada basada en uso
-     */
-    private getPersonalizedRecommendation(plans: any[], usage: any): any {
-        if (usage.averageUsage > 70 && usage.streamingUsage === 'high') {
+    private getPlanDetails(planId: string): any {
+        // Buscar en planes de internet
+        let plan = this.internetPlans.find(p => p.id === planId);
+        if (plan) {
             return {
-                planId: 'plan_100',
-                reason: 'Basado en tu alto uso de streaming, recomendamos 100MB para mejor experiencia'
+                name: plan.name,
+                description: plan.speed,
+                price: plan.price
             };
         }
 
-        if (usage.devices > 5) {
+        // Buscar en combos
+        const combo = this.comboPlan.find(c => c.id === planId);
+        if (combo) {
             return {
-                planId: 'plan_50',
-                reason: 'Con múltiples dispositivos conectados, 50MB mejorará tu velocidad'
+                name: combo.name,
+                description: combo.description,
+                price: combo.comboPrice
+            };
+        }
+
+        // Caso especial para contacto empresarial
+        if (planId === 'enterprise_contact') {
+            return {
+                name: 'Consulta Empresarial',
+                description: 'Evaluación de opciones empresariales personalizadas',
+                price: 0
             };
         }
 
@@ -368,121 +651,44 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
     }
 
     /**
-     * Calcula descuento por upgrade
+     * Envía mensaje de confirmación personalizado según el tipo de solicitud
      */
-    private calculateUpgradeDiscount(currentPrice: number, newPrice: number): number {
-        const difference = newPrice - currentPrice;
-        if (difference > 50000) return 20; // 20% descuento para upgrades grandes
-        if (difference > 30000) return 15; // 15% descuento para upgrades medianos
-        if (difference > 20000) return 10; // 10% descuento para upgrades pequeños
-        return 0;
-    }
-
-    /**
-     * Obtiene detalles de un plan específico
-     */
-    private async getPlanDetails(planId: string): Promise<any> {
-        const plans: any = {
-            'plan_50': {
-                id: 'plan_50',
-                name: 'Plan Hogar 50MB',
-                speed: '50/20 Mbps',
-                price: 98900,
-                description: 'Ideal para familias que usan streaming y gaming'
-            },
-            'plan_100': {
-                id: 'plan_100',
-                name: 'Plan Hogar 100MB',
-                speed: '100/50 Mbps',
-                price: 138900,
-                description: 'Máximo rendimiento para trabajo remoto y entretenimiento'
-            },
-            'plan_200': {
-                id: 'plan_200',
-                name: 'Plan Ultra 200MB',
-                speed: '200/100 Mbps',
-                price: 198900,
-                description: 'Para usuarios avanzados y múltiples dispositivos'
-            }
-        };
-
-        return plans[planId] || null;
-    }
-
-    /**
-     * Procesa la solicitud de upgrade
-     */
-    private async processUpgradeRequest(user: User, plan: any, session: SessionData): Promise<any> {
-        try {
-            // En implementación real, esto crearía la orden en WispHub
-            const orderId = 'UPG' + Date.now();
-
-            return {
-                success: true,
-                orderId,
-                estimatedActivation: '24-48 horas',
-                discount: this.calculateUpgradeDiscount(78900, plan.price)
-            };
-        } catch (error) {
-            return {
-                success: false,
-                error: 'Error técnico al procesar la solicitud'
-            };
+    private async sendConfirmationMessage(user: User, session: SessionData): Promise<void> {
+        if (session.selectedPlanId === 'enterprise_contact') {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '✅ **¡Solicitud de Consulta Empresarial Enviada!**\n\n' +
+                `📋 **Tipo:** Consulta Empresarial\n` +
+                `📅 **Fecha:** ${new Date().toLocaleDateString('es-CO')}\n` +
+                `⏰ **Hora:** ${new Date().toLocaleTimeString('es-CO')}\n\n` +
+                '🏢 **Nuestro equipo comercial empresarial se pondrá en contacto contigo**\n\n' +
+                '📞 **Te contactaremos dentro de las próximas 4 horas hábiles** para evaluar tus necesidades específicas.\n\n' +
+                '💼 **Prepararemos una propuesta personalizada** según tus requerimientos empresariales.\n\n' +
+                '¡Gracias por considerar nuestros servicios empresariales! 🌟');
+        } else {
+            await this.messageService.sendTextMessage(user.phoneNumber,
+                '✅ **¡Solicitud Enviada Exitosamente!**\n\n' +
+                `📋 **Tipo:** ${this.getPlanTypeDescription(session.planType)}\n` +
+                `📅 **Fecha:** ${new Date().toLocaleDateString('es-CO')}\n` +
+                `⏰ **Hora:** ${new Date().toLocaleTimeString('es-CO')}\n\n` +
+                '👥 **Tu solicitud será procesada por nuestro equipo comercial**\n\n' +
+                '📞 **Te contactaremos dentro de las próximas 24 horas** para coordinar los detalles del cambio.\n\n' +
+                '💡 **Importante:** El cambio se efectuará sin costo adicional de instalación si mantienes la misma tecnología.\n\n' +
+                '🎉 **Beneficios adicionales:**\n' +
+                '• Migración sin interrupción del servicio\n' +
+                '• Soporte técnico durante el proceso\n' +
+                '• Garantía de velocidad desde el primer día\n\n' + '¡Gracias por confiar en Conecta2 Telecomunicaciones! 🌟');
         }
     }
 
     /**
-     * Envía confirmación de upgrade exitoso
+     * Resetea el estado de sesión de mejora de plan
      */
-    private async sendUpgradeConfirmation(user: User, plan: any, result: any): Promise<void> {
-        await this.messageService.sendTextMessage(user.phoneNumber,
-            '🎉 **¡Upgrade Solicitado Exitosamente!**\n\n' +
-            `📋 **Orden ID:** ${result.orderId}\n` +
-            `📈 **Nuevo plan:** ${plan.name}\n` +
-            `🚀 **Nueva velocidad:** ${plan.speed}\n` +
-            `💰 **Nuevo precio:** $${plan.price.toLocaleString()}` +
-            (result.discount > 0 ? `\n🎁 **Descuento primer mes:** ${result.discount}%` : '') + '\n\n' +
-            '⏱️ **Tiempo de activación:** ' + result.estimatedActivation + '\n\n' +
-            '📋 **Próximos pasos:**\n' +
-            '• Tu solicitud está en proceso\n' +
-            '• No necesitas hacer nada más\n' +
-            '• Te notificaremos cuando esté activo\n' +
-            '• El cambio será automático\n\n' +
-            '📱 Te mantendremos informado del progreso.');
-
-        // Enviar información adicional
-        setTimeout(async () => {
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '💡 **Información importante:**\n\n' +
-                '• Tu servicio actual seguirá funcionando\n' +
-                '• El upgrade se hará sin cortes\n' +
-                '• La facturación se ajustará automáticamente\n' +
-                '• Conservarás tu dirección IP actual\n\n' +
-                '❓ Si tienes preguntas, escribe "estado_upgrade" para consultar el progreso.');
-        }, 3000);
-    }
-
-    /**
-     * Envía mensaje de error en upgrade
-     */
-    private async sendUpgradeError(user: User, error: string): Promise<void> {
-        await this.messageService.sendTextMessage(user.phoneNumber,
-            `❌ **No se pudo procesar el upgrade**\n\n` +
-            `**Motivo:** ${error}\n\n` +
-            '🤝 **¿Qué puedes hacer?**\n' +
-            '• Contactar a nuestro equipo comercial\n' +
-            '• Intentar nuevamente más tarde\n' +
-            '• Solicitar asesoría personalizada\n\n' +
-            'Escribe "agente_comercial" para hablar con un asesor.');
-    }
-
-    /**
-     * Resetea el estado de sesión de upgrade
-     */
-    private resetUpgradeSession(session: SessionData): void {
+    private resetPlanUpgradeSession(session: SessionData): void {
         session.upgradingPlan = false;
+        session.planType = undefined;
+        session.planCategory = undefined;
+        session.selectedPlanId = undefined;
+        session.selectedTVPlanId = undefined;
         session.step = undefined;
-        session.selectedServiceId = undefined;
-        session.availableServices = undefined;
     }
 }

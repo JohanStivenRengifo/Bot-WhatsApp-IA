@@ -106,7 +106,6 @@ export class SessionManager {
         return {
             changingPassword: false,
             creatingTicket: false,
-            handlingReactivation: false,
             lastActivity: new Date()
         };
     }

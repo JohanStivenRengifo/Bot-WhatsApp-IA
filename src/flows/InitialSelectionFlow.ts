@@ -3,7 +3,7 @@ import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService } from '../services';
 
 /**
- * Flujo inicial para seleccionar entre Ventas y Soporte Técnico
+ * Flujo inicial para seleccionar entre Ventas y acceso como Cliente
  */
 export class InitialSelectionFlow extends BaseConversationFlow {
     readonly name: string = 'initialSelection';
@@ -74,12 +74,11 @@ export class InitialSelectionFlow extends BaseConversationFlow {
                                 id: 'ventas',
                                 title: '🛒 Ventas'
                             }
-                        },
-                        {
+                        }, {
                             type: 'reply',
                             reply: {
                                 id: 'soporte',
-                                title: '🔧 Soporte Técnico'
+                                title: '🔧 Ya soy cliente'
                             }
                         }
                     ]
@@ -111,7 +110,7 @@ export class InitialSelectionFlow extends BaseConversationFlow {
             return true;
         }
         else if (messageText.includes('soporte') || message === 'soporte') {
-            // Usuario seleccionó soporte técnico
+            // Usuario seleccionó acceder como cliente
             session.selectedService = 'soporte';
             session.flowActive = 'support';
             user.hasSelectedService = true;
@@ -121,11 +120,10 @@ export class InitialSelectionFlow extends BaseConversationFlow {
             return true;
         }
         else {
-            // Respuesta no válida, mostrar opciones nuevamente
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Por favor, selecciona una opción válida:\n\n' +
+            // Respuesta no válida, mostrar opciones nuevamente            await this.messageService.sendTextMessage(user.phoneNumber,
+            '❌ Por favor, selecciona una opción válida:\n\n' +
                 '🛒 Escribe "Ventas" para servicios de venta\n' +
-                '🔧 Escribe "Soporte" para soporte técnico');
+                '🔧 Escribe "Soporte" para acceder como cliente';
             return true;
         }
     }

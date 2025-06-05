@@ -1,4 +1,4 @@
- import dotenv from 'dotenv';
+import dotenv from 'dotenv';
 dotenv.config();
 
 export const config = {
@@ -7,10 +7,10 @@ export const config = {
         webhookVerifyToken: process.env.WEBHOOK_VERIFY_TOKEN || '',
         phoneNumberId: process.env.PHONE_NUMBER_ID || '',
         version: 'v18.0'
-    },
-    wisphub: {
+    }, wisphub: {
         baseUrl: process.env.WISPHUB_API_URL || '',
-        apiKey: process.env.WISPHUB_API_KEY || ''
+        apiKey: process.env.WISPHUB_API_KEY || '',
+        defaultTechnicianId: process.env.WISPHUB_DEFAULT_TECHNICIAN_ID || ''
     },
     crm: {
         baseUrl: process.env.CRM_API_URL || '',

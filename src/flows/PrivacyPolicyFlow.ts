@@ -47,14 +47,15 @@ export class PrivacyPolicyFlow extends BaseConversationFlow {
      * Maneja la aceptación de la política de privacidad
      */
     private async handleAcceptPrivacy(user: User, session: SessionData): Promise<void> {
-        user.acceptedPrivacyPolicy = true;
-
-        // Solo pedir autenticación si el usuario seleccionó soporte técnico
+        user.acceptedPrivacyPolicy = true;        // Solo pedir autenticación si el usuario seleccionó soporte técnico
         if (session.selectedService === 'soporte') {
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '✅ Gracias por aceptar nuestras políticas.\n\n' +
                 'Ahora necesito autenticarte para brindarte soporte personalizado.\n\n' +
-                'Por favor, ingresa tu número de documento de identidad:');
+                'Puedes ingresar:\n' +
+                '• Tu número de cédula/documento de identidad\n' +
+                '• Tu ID de servicio (número de cliente)\n\n' +
+                'Por favor, ingresa solo los números (sin espacios ni guiones):');
 
             // Establecer que está esperando un documento
             user.awaitingDocument = true;
@@ -67,6 +68,9 @@ export class PrivacyPolicyFlow extends BaseConversationFlow {
             // Activar el flujo de ventas automáticamente
             session.flowActive = 'sales';
             session.salesConversationStarted = true;
+
+            // Enviar mensaje inicial del flujo de ventas
+            await this.messageService.sendTextMessage(user.phoneNumber, '¿En qué producto o servicio estás interesado? Nuestro equipo de ventas está listo para ayudarte.');
         }
     }
 
@@ -79,7 +83,6 @@ export class PrivacyPolicyFlow extends BaseConversationFlow {
             'Respetamos tu decisión de no autorizar el tratamiento de tus datos personales.\n\n' +
             'Sin esta autorización no podemos brindarte nuestros servicios de soporte personalizado a través de este canal.\n\n' +
             'Si cambias de opinión en el futuro, puedes contactarnos nuevamente.\n\n' +
-            '📞 Para asistencia general puedes llamar a nuestra línea de atención al cliente.\n\n' +
             '¡Que tengas un excelente día! 😊');
     }
 }

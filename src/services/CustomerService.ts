@@ -14,26 +14,110 @@ interface WispHubCustomer {
     estado?: string;
 }
 
-export class CustomerService {
-    async authenticateCustomer(documentNumber: string): Promise<CustomerData | null> {
+export class CustomerService {    /**
+     * Autentica un cliente por cédula o ID de servicio
+     * @param input - Cédula o ID de servicio (1-12 dígitos)
+     * @returns CustomerData si se encuentra y está activo, null si no
+     */
+    async authenticateCustomer(input: string): Promise<CustomerData | null> {
         try {
-            // Normalizar el número de documento (eliminar espacios y caracteres especiales)
-            const normalizedDocument = documentNumber.replace(/[^0-9]/g, '').trim();
+            // Normalizar la entrada (eliminar espacios y caracteres especiales)
+            const normalizedInput = input.replace(/[^0-9]/g, '').trim();
 
-            // Validar formato básico
-            if (!/^\d{6,12}$/.test(normalizedDocument)) {
-                console.log('Formato de documento inválido');
+            // Validar formato básico (1-12 dígitos para cédula o ID de servicio)
+            if (!/^\d{1,12}$/.test(normalizedInput)) {
+                console.log('Formato de entrada inválido');
                 return null;
             }
 
-            console.log(`🔍 Consultando cliente por documento: ${normalizedDocument}`);            // Paso 1: Buscar el cliente por número de documento en la API de WispHub
+            console.log(`🔍 Consultando cliente por: ${normalizedInput} (puede ser cédula o ID de servicio)`);
+
+            // Primero intentar buscar por ID de servicio directamente
+            const serviceResult = await this.searchByServiceId(normalizedInput);
+            if (serviceResult) {
+                console.log(`✅ Cliente encontrado por ID de servicio: ${serviceResult.name}`);
+                return serviceResult;
+            }
+
+            // Si no se encuentra por ID de servicio, buscar por cédula
+            const documentResult = await this.searchByDocument(normalizedInput);
+            if (documentResult) {
+                console.log(`✅ Cliente encontrado por cédula: ${documentResult.name}`);
+                return documentResult;
+            }
+
+            console.log(`❌ No se encontró cliente con cédula o ID de servicio: ${normalizedInput}`);
+            return null;
+        } catch (error) {
+            console.error('Error en autenticación de cliente:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Busca un cliente por ID de servicio directamente
+     */
+    private async searchByServiceId(serviceId: string): Promise<CustomerData | null> {
+        try {
+            console.log(`🔍 Buscando por ID de servicio: ${serviceId}`);
+
+            // Intentar acceder directamente al servicio por ID
+            const serviceResponse = await axios.get(`${config.wisphub.baseUrl}clientes/${serviceId}`, {
+                headers: { 'Authorization': config.wisphub.apiKey }
+            });
+
+            if (serviceResponse.data && serviceResponse.data.id_servicio) {
+                const cliente = serviceResponse.data;
+
+                // Verificar estado del servicio
+                const estadoServicio = cliente.estado?.toLowerCase();
+                const isActive = estadoServicio === 'activo' || estadoServicio === 'active'; console.log(`📋 Servicio encontrado: ${cliente.nombre || 'Sin nombre'} - Estado: ${cliente.estado}`);
+
+                // Mapear la respuesta al formato CustomerData
+                const customerData: CustomerData = {
+                    id: cliente.id_servicio,
+                    name: cliente.nombre?.trim() || cliente.id_servicio || 'Cliente',
+                    email: cliente.email || '',
+                    document: cliente.documento || cliente.cedula || '',
+                    ip_address: cliente.ip || '',
+                    status: cliente.estado || 'unknown',
+                    isInactive: !isActive
+                };
+
+                console.log(`✅ Cliente procesado: ${customerData.name} (ID: ${customerData.id})`);
+                return customerData;
+            }
+
+            return null;
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                if (error.response?.status === 404) {
+                    console.log(`🔍 No se encontró servicio con ID: ${serviceId}`);
+                } else {
+                    console.error(`Error buscando por ID de servicio (${error.response?.status}):`, error.response?.data);
+                }
+            } else {
+                console.error('Error en búsqueda por ID de servicio:', error);
+            }
+            return null;
+        }
+    }
+
+    /**
+     * Busca un cliente por número de cédula/documento
+     */
+    private async searchByDocument(documentNumber: string): Promise<CustomerData | null> {
+        try {
+            console.log(`🔍 Buscando por cédula/documento: ${documentNumber}`);
+
+            // Paso 1: Buscar el cliente por número de documento en la API de WispHub
             console.log(`🔎 URL API: ${config.wisphub.baseUrl}clientes`);
             console.log(`🔑 API Key: ${config.wisphub.apiKey}`);
 
             // Primero intentamos buscar por el documento exacto
             let searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes`, {
                 headers: { 'Authorization': config.wisphub.apiKey },
-                params: { documento: normalizedDocument, limit: 20 }
+                params: { documento: documentNumber, limit: 20 }
             });
 
             // Si no encontramos resultados exactos, buscamos en todos los clientes
@@ -41,12 +125,14 @@ export class CustomerService {
                 console.log(`📊 No se encontraron coincidencias exactas por documento, realizando búsqueda amplia...`);
                 searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes`, {
                     headers: { 'Authorization': config.wisphub.apiKey },
-                    params: { limit: 1000, search: normalizedDocument }
+                    params: { limit: 1000, search: documentNumber }
                 });
             }
 
             // Variable para almacenar los clientes encontrados
-            let clientesEncontrados: WispHubCustomer[] = [];            // Verificar si hay datos en la respuesta y manejar diferentes formatos
+            let clientesEncontrados: WispHubCustomer[] = [];
+
+            // Verificar si hay datos en la respuesta y manejar diferentes formatos
             if (searchResponse.data) {
                 if (searchResponse.data.results && Array.isArray(searchResponse.data.results)) {
                     // Formato paginado (results es un array)
@@ -75,13 +161,15 @@ export class CustomerService {
             if (clientesEncontrados.length === 0) {
                 console.log('No se encontró cliente con ese número de documento');
                 return null;
-            }            // Buscar coincidencia exacta de cédula
+            }
+
+            // Buscar coincidencia exacta de cédula
             const cliente = clientesEncontrados.find(c => {
                 const clienteDoc = (c.documento || c.cedula || '').toString().replace(/[^0-9]/g, '').trim();
-                const coincidenciaExacta = clienteDoc === normalizedDocument;
+                const coincidenciaExacta = clienteDoc === documentNumber;
 
                 if (coincidenciaExacta) {
-                    console.log(`✅ Coincidencia exacta encontrada para documento ${normalizedDocument} - Cliente: ${c.nombre}`);
+                    console.log(`✅ Coincidencia exacta encontrada para documento ${documentNumber} - Cliente: ${c.nombre}`);
                 }
 
                 return coincidenciaExacta;
@@ -95,7 +183,7 @@ export class CustomerService {
                         return {
                             documento: doc,
                             nombre: c.nombre || 'Sin nombre',
-                            similitud: doc.includes(normalizedDocument.slice(-4)) ? 'Alta' : 'Baja'
+                            similitud: doc.includes(documentNumber.slice(-4)) ? 'Alta' : 'Baja'
                         };
                     })
                     .filter(c => c.similitud === 'Alta')
@@ -113,7 +201,9 @@ export class CustomerService {
             if (!cliente || !cliente.id_servicio) {
                 console.log('Cliente encontrado pero sin ID válido');
                 return null;
-            }            // Paso 2: Consultar los detalles del servicio para verificar si está activo
+            }
+
+            // Paso 2: Consultar los detalles del servicio para verificar si está activo
             const serviceResponse = await axios.get(`${config.wisphub.baseUrl}clientes/${cliente.id_servicio}`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
             });
@@ -128,7 +218,7 @@ export class CustomerService {
                     id: cliente.id_servicio,
                     name: cliente.nombre || 'Cliente',
                     email: cliente.email || '',
-                    document: normalizedDocument,
+                    document: documentNumber,
                     ip_address: cliente.ip || '',
                     status: serviceResponse.data?.estado || 'inactive',
                     isInactive: true
@@ -140,7 +230,7 @@ export class CustomerService {
                 id: cliente.id_servicio,
                 name: cliente.nombre || 'Cliente',
                 email: cliente.email || '',
-                document: normalizedDocument,
+                document: documentNumber,
                 ip_address: cliente.ip || '',
                 status: serviceResponse.data?.estado || 'unknown'
             };
@@ -155,7 +245,9 @@ export class CustomerService {
             }
             return null;
         }
-    } async getCustomerInfo(customerId: string): Promise<CustomerData> {
+    }
+
+    async getCustomerInfo(customerId: string): Promise<CustomerData> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}clientes/${customerId}`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -190,7 +282,9 @@ export class CustomerService {
                 alive: false,
             } as ping.PingResponse;
         }
-    } async getCustomerInvoices(customerId: string): Promise<Invoice[]> {
+    }
+
+    async getCustomerInvoices(customerId: string): Promise<Invoice[]> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}clientes/${customerId}/facturas`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -201,7 +295,9 @@ export class CustomerService {
             console.error('Get customer invoices error:', error);
             return [];
         }
-    } async getCustomerDebt(customerId: string): Promise<DebtInfo | null> {
+    }
+
+    async getCustomerDebt(customerId: string): Promise<DebtInfo | null> {
         try {
             const invoicesResponse = await axios.get(`${config.wisphub.baseUrl}clientes/${customerId}/facturas`, {
                 headers: { 'Authorization': config.wisphub.apiKey },
@@ -227,7 +323,9 @@ export class CustomerService {
                 nextDueDate = firstInvoice.fecha_vencimiento ?
                     new Date(firstInvoice.fecha_vencimiento) :
                     (firstInvoice.dueDate || new Date());
-            } return {
+            }
+
+            return {
                 totalDebt,
                 totalAmount: totalDebt, // Alias para compatibilidad
                 pendingInvoices: pendingInvoices.length,
@@ -252,7 +350,9 @@ export class CustomerService {
                 return dueDate < today;
             })
             .reduce((sum, invoice) => sum + (invoice.monto ?? invoice.amount ?? 0), 0);
-    } async getCustomerPlan(customerId: string): Promise<PlanData | null> {
+    }
+
+    async getCustomerPlan(customerId: string): Promise<PlanData | null> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}clientes/${customerId}`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -273,7 +373,9 @@ export class CustomerService {
             console.error('Get customer plan error:', error);
             return null;
         }
-    } async getPaymentPoints(): Promise<PaymentPoint[]> {
+    }
+
+    async getPaymentPoints(): Promise<PaymentPoint[]> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}puntos-pago`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -284,7 +386,9 @@ export class CustomerService {
             console.error('Get payment points error:', error);
             return [];
         }
-    } async getOverdueCustomers(): Promise<OverdueCustomer[]> {
+    }
+
+    async getOverdueCustomers(): Promise<OverdueCustomer[]> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}clientes/morosos`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -306,7 +410,9 @@ export class CustomerService {
         ];
         const messageNormalized = message.toLowerCase().trim();
         return keywords.some(keyword => messageNormalized.includes(keyword));
-    } async verifyPassword(customerId: string, password: string): Promise<boolean> {
+    }
+
+    async verifyPassword(customerId: string, password: string): Promise<boolean> {
         try {
             const response = await axios.post(`${config.wisphub.baseUrl}clientes/${customerId}/verificar-password`,
                 { password },
@@ -318,7 +424,9 @@ export class CustomerService {
             console.error('Verify password error:', error);
             return false;
         }
-    } async updatePassword(customerId: string, newPassword: string): Promise<boolean> {
+    }
+
+    async updatePassword(customerId: string, newPassword: string): Promise<boolean> {
         try {
             const response = await axios.post(`${config.wisphub.baseUrl}clientes/${customerId}/actualizar-password`,
                 { newPassword },
@@ -330,7 +438,9 @@ export class CustomerService {
             console.error('Update password error:', error);
             return false;
         }
-    } async getServiceOutages(): Promise<any[]> {
+    }
+
+    async getServiceOutages(): Promise<any[]> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}mantenimientos`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
@@ -341,7 +451,9 @@ export class CustomerService {
             console.error('Get service outages error:', error);
             return [];
         }
-    } async getAffectedUsers(area: string): Promise<any[]> {
+    }
+
+    async getAffectedUsers(area: string): Promise<any[]> {
         try {
             const response = await axios.get(`${config.wisphub.baseUrl}clientes`, {
                 headers: { 'Authorization': config.wisphub.apiKey },
