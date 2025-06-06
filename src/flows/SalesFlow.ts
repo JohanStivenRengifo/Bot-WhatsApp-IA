@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, AIService, CustomerService, TicketService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 import axios from 'axios';
 import { config } from '../config';
 
@@ -56,7 +57,7 @@ export class SalesFlow extends BaseConversationFlow {
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
-        const normalizedMessage = message.toLowerCase().trim();
+        const extractedCommand = extractMenuCommand(message);
 
         // Si estamos en proceso de contratación, este flujo debe manejar el mensaje
         if (session.contractingPlan === true) {
@@ -65,17 +66,14 @@ export class SalesFlow extends BaseConversationFlow {
 
         // Excluir mensajes específicos de upgrade de plan que deben ir a PlanUpgradeFlow
         const planUpgradeKeywords = ['mejorar_plan', 'plan_upgrade', 'upgrade_plan', 'mejora_plan'];
-        if (planUpgradeKeywords.some(keyword => normalizedMessage === keyword)) {
+        if (planUpgradeKeywords.includes(extractedCommand)) {
             return false;
         }
 
-        // Detectar intención de contratar
-        const contractingIntent =
-            normalizedMessage.includes('contratar') ||
-            normalizedMessage.includes('quiero el plan') ||
-            normalizedMessage.includes('me interesa') ||
-            normalizedMessage.includes('adquirir') ||
-            normalizedMessage.includes('comprar');
+        // Detectar intención de contratar mediante palabras clave
+        const hasContractingIntent = isMenuCommand(message, [
+            'contratar', 'quiero el plan', 'me interesa', 'adquirir', 'comprar'
+        ]);
 
         return (
             // Usuario en flujo de ventas activo
@@ -83,14 +81,14 @@ export class SalesFlow extends BaseConversationFlow {
             // Usuario ha seleccionado ventas y aceptado políticas
             (session.selectedService === 'ventas' && user.acceptedPrivacyPolicy) ||
             // Usuario dice "ventas" directamente
-            message.toLowerCase().includes('ventas') ||
+            extractedCommand === 'ventas' ||
             // Usuario solicita información de planes (pero no upgrade específico)
-            (message.toLowerCase().includes('plan') && user.acceptedPrivacyPolicy &&
-                !planUpgradeKeywords.some(keyword => normalizedMessage.includes(keyword))) ||
+            (isMenuCommand(message, ['plan', 'planes', 'internet']) && user.acceptedPrivacyPolicy &&
+                !planUpgradeKeywords.includes(extractedCommand)) ||
             // Flujo activado automáticamente después de políticas
             session.salesConversationStarted === true ||
             // Usuario quiere contratar un plan
-            contractingIntent
+            hasContractingIntent
         );
     }/**
      * Maneja el mensaje del usuario

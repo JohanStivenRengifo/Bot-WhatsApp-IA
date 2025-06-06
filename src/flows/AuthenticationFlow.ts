@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, CustomerService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 
 /**
  * Flujo de autenticación de usuarios
@@ -26,9 +27,11 @@ export class AuthenticationFlow extends BaseConversationFlow {
         // 2. El usuario ha seleccionado soporte técnico y no está autenticado
         // 3. El usuario acepta la política de privacidad y necesita autenticarse para soporte
 
+        const extractedCommand = extractMenuCommand(message);
         const selectedSoporte = session.selectedService === 'soporte' ||
-            message.toLowerCase().includes('soporte') ||
-            message.toLowerCase().includes('técnico');
+            extractedCommand === 'soporte' ||
+            extractedCommand === 'ticket' ||
+            isMenuCommand(message, ['soporte técnico', 'técnico', 'reportar problemas']);
 
         return (user.awaitingDocument && !user.authenticated && selectedSoporte) ||
             (!user.authenticated && selectedSoporte && user.acceptedPrivacyPolicy);

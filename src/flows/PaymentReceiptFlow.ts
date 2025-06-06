@@ -4,6 +4,7 @@ import { MessageService } from '../services/MessageService';
 import { ImageStorageService, ImageMetadata } from '../services/ImageStorageService';
 import { PaymentValidationService, PaymentValidationResult } from '../services/PaymentValidationService';
 import { TicketService } from '../services/TicketService';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 
 export class PaymentReceiptFlow implements ConversationFlow {
     name = 'PaymentReceiptFlow';
@@ -17,16 +18,13 @@ export class PaymentReceiptFlow implements ConversationFlow {
         this.imageStorageService = new ImageStorageService();
         this.paymentValidationService = new PaymentValidationService();
         this.ticketService = new TicketService();
-    }
-
-    async canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
+    } async canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
         // Si es un mensaje de texto sobre comprobantes
         if (typeof message === 'string') {
-            const lowerMessage = message.toLowerCase();
-            return lowerMessage.includes('comprobante') ||
-                lowerMessage.includes('pago') ||
-                lowerMessage.includes('transferencia') ||
-                lowerMessage.includes('factura');
+            const extractedCommand = extractMenuCommand(message);
+            return extractedCommand === 'validar_pago' ||
+                isMenuCommand(message, ['comprobante', 'pago', 'transferencia', 'factura',
+                    'comprobante_pago', 'subir comprobante', 'validar pago']);
         }
 
         // Si es un mensaje con imagen
@@ -184,10 +182,11 @@ export class PaymentReceiptFlow implements ConversationFlow {
      * Maneja consultas de texto sobre comprobantes
      */
     private async handlePaymentInquiry(user: User, message: string): Promise<boolean> {
-        const lowerMessage = message.toLowerCase(); if (lowerMessage.includes('comprobante') || lowerMessage.includes('pago')) {
+        const lowerMessage = message.toLowerCase(); if (lowerMessage === 'validar_pago' || lowerMessage === 'comprobante_pago' ||
+            lowerMessage.includes('comprobante') || lowerMessage.includes('pago')) {
             await this.messageService.sendTextMessage(
                 user.phoneNumber,
-                `💳 **ENVÍO DE COMPROBANTES DE PAGO**\n\n` +
+                `💳 **VALIDACIÓN DE COMPROBANTES DE PAGO**\n\n` +
                 `Para verificar tu pago, simplemente envía una **foto clara** de tu comprobante.\n\n` +
                 `📋 **Cuentas autorizadas:**\n` +
                 `${PaymentValidationService.getValidAccountsInfo()}\n\n` +

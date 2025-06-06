@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, TicketService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 import axios from 'axios';
 import { config } from '../config';
 
@@ -23,30 +24,23 @@ export class TicketCreationFlow extends BaseConversationFlow {
         // Configurar API key y URL directamente para garantizar conexión correcta
         this.apiKey = 'Api-Key mHHsEQKX.Uc1BQzXFOCXUno64ZTM9K4vaDPjH9gLq';
         this.apiUrl = 'https://api.wisphub.app/api/tickets/';
-    }
-
-    /**
+    }    /**
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         // Normalizar el mensaje para facilitar la comparación
-        const normalizedMessage = message.toLowerCase().trim();
-        
+        const extractedCommand = extractMenuCommand(message);
+
         // Este flujo maneja:
         // 1. Cuando se selecciona "Crear Ticket" del menú de soporte
         // 2. Cuando está en proceso de creación de ticket
         // 3. Cuando el usuario escribe variantes de "crear ticket" o "reportar problema"
         return (
             user.authenticated &&
-            (normalizedMessage === 'crear_ticket' ||
-                normalizedMessage === 'ticket_creation' ||
-                normalizedMessage === 'soporte' ||
-                normalizedMessage === 'reportar_falla' ||
-                normalizedMessage.includes('rear ticket') ||
-                normalizedMessage.includes('crear ticket') ||
-                normalizedMessage.includes('reportar problema') ||
-                normalizedMessage.includes('ticket') ||
-                session.creatingTicket === true)
+            (extractedCommand === 'ticket' ||
+                session.creatingTicket === true ||
+                isMenuCommand(message, ['crear_ticket', 'ticket_creation', 'soporte',
+                    'reportar_falla', 'crear ticket', 'reportar problema']))
         );
     }
 
@@ -66,9 +60,12 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     '2️⃣ Realizar el pago pendiente si lo hubiera\n' +
                     '3️⃣ Contactar a nuestro equipo de atención al cliente');
                 return true;
-            }
-
+            }            // Iniciar la creación de ticket o continuar si ya está en proceso
             if (!session.creatingTicket) {
+                session.creatingTicket = true;
+                return await this.initializeTicketCreation(user, session);
+            } else if (!session.step) {
+                // El flujo ya está activo pero no tiene step definido (recién activado por ClientMenuFlow)
                 return await this.initializeTicketCreation(user, session);
             }
 
@@ -249,9 +246,7 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     'Authorization': this.apiKey
                     // No establecemos Content-Type, axios lo configura automáticamente con el boundary correcto para FormData
                 }
-            });
-
-            const ticketId = response.data?.id || "Pendiente";
+            }); const ticketId = response.data?.id || "Pendiente";
 
             // Enviar confirmación exitosa
             await this.messageService.sendTextMessage(user.phoneNumber,
@@ -264,6 +259,13 @@ export class TicketCreationFlow extends BaseConversationFlow {
                 '• Te contactaremos pronto para brindarte solución\n' +
                 '• Tiempo estimado de respuesta: 2-4 horas\n\n' +
                 '¡Gracias por reportar tu falla!');
+
+            // Mostrar botones de navegación
+            await this.messageService.sendNavigationButtons(
+                user.phoneNumber,
+                '🔧 Ticket Creado',
+                '¿Qué deseas hacer ahora?'
+            );
 
             // Limpiar estado de sesión
             this.resetTicketSession(session);
@@ -287,14 +289,19 @@ export class TicketCreationFlow extends BaseConversationFlow {
                     }
                 };
 
-                await this.ticketService.createTicket(ticketData);
-
-                await this.messageService.sendTextMessage(user.phoneNumber,
+                await this.ticketService.createTicket(ticketData); await this.messageService.sendTextMessage(user.phoneNumber,
                     '✅ **¡Reporte Recibido!**\n\n' +
                     `📂 **Problema:** ${session.asunto}\n` +
                     `📅 **Fecha:** ${new Date().toLocaleDateString('es-CO')}\n\n` +
                     '👨‍💻 **Tu reporte será atendido por nuestro equipo técnico**\n\n' +
                     '¡Gracias por reportar tu falla!');
+
+                // Mostrar botones de navegación
+                await this.messageService.sendNavigationButtons(
+                    user.phoneNumber,
+                    '🔧 Ticket Creado',
+                    '¿Qué deseas hacer ahora?'
+                );
 
             } catch (innerError) {
                 console.error('Error con sistema de tickets de respaldo:', innerError);

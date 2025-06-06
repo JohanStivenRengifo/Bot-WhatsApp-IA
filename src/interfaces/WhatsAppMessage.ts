@@ -63,13 +63,15 @@ export interface WhatsAppWebhookValue {
 export interface SessionData {
     // Flags de estado de flujos
     changingPassword: boolean;
-    creatingTicket: boolean;    // Nuevos flags para flows
+    creatingTicket: boolean;
+    // Nuevos flags para flows
     flowActive?: string;
     selectedService?: 'ventas' | 'soporte';
     consultingInvoices?: boolean;
     upgradingPlan?: boolean;
     salesConversationStarted?: boolean;
-    
+    verifyingPayment?: boolean;
+
     // Flags para proceso de contratación
     contractingPlan?: boolean;
     contractingStep?: 'name' | 'email' | 'address' | 'phone' | 'confirm';

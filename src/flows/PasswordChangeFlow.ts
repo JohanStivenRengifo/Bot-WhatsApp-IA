@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, TicketService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 
 /**
  * Flujo para cambio de contraseñas mediante ticket
@@ -17,17 +18,16 @@ export class PasswordChangeFlow extends BaseConversationFlow {
     ) {
         super(messageService, securityService);
         this.ticketService = ticketService;
-    }
-
-    /**
+    }    /**
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        const extractedCommand = extractMenuCommand(message);
+
         return (
             user.authenticated &&
-            (message === 'cambiar_clave' ||
-                message === 'password_change' ||
-                message === 'nueva_contraseña' ||
+            (extractedCommand === 'cambiar_clave' ||
+                isMenuCommand(message, ['password_change', 'nueva_contraseña', 'cambiar contraseña']) ||
                 session.changingPassword === true)
         );
     }
@@ -177,9 +177,7 @@ export class PasswordChangeFlow extends BaseConversationFlow {
                 }
             };
 
-            const ticketId = await this.ticketService.createTicket(ticketData);
-
-            await this.messageService.sendTextMessage(user.phoneNumber,
+            const ticketId = await this.ticketService.createTicket(ticketData); await this.messageService.sendTextMessage(user.phoneNumber,
                 '🎉 **¡Solicitud de Cambio Procesada!**\n\n' +
                 `🎫 **Ticket ID:** ${ticketId}\n` +
                 '⏱️ **Tiempo de procesamiento:** 15-30 minutos\n\n' +
@@ -189,7 +187,16 @@ export class PasswordChangeFlow extends BaseConversationFlow {
                 '• La nueva contraseña estará activa en tu router\n' +
                 '• También podrás usarla en el portal web\n\n' +
                 '📱 Te notificaremos por WhatsApp cuando esté lista.\n\n' +
-                '🔒 *Por seguridad, tu nueva contraseña está encriptada y solo será visible para ti.*');            // Notificar al sistema sobre el cambio de contraseña (implementación futura)
+                '🔒 *Por seguridad, tu nueva contraseña está encriptada y solo será visible para ti.*');
+
+            // Mostrar botones de navegación
+            await this.messageService.sendNavigationButtons(
+                user.phoneNumber,
+                '🔐 Cambio de Contraseña',
+                '¿Qué deseas hacer ahora?'
+            );
+
+            // Notificar al sistema sobre el cambio de contraseña (implementación futura)
             // await this.ticketService.notifyPasswordChangeRequest(ticketId, user.customerId!);
 
             // Limpiar sesión
@@ -220,9 +227,7 @@ export class PasswordChangeFlow extends BaseConversationFlow {
                 source: 'whatsapp'
             };
 
-            const ticketId = await this.ticketService.createTicket(ticketData);
-
-            await this.messageService.sendTextMessage(user.phoneNumber,
+            const ticketId = await this.ticketService.createTicket(ticketData); await this.messageService.sendTextMessage(user.phoneNumber,
                 '🔑 **Solicitud de Recuperación Creada**\n\n' +
                 `🎫 **Ticket ID:** ${ticketId}\n` +
                 '👨‍💻 **Estado:** En proceso\n\n' +
@@ -233,6 +238,13 @@ export class PasswordChangeFlow extends BaseConversationFlow {
                 '• Podrás cambiarla desde el portal web\n\n' +
                 '⏱️ **Tiempo estimado:** 30-60 minutos\n' +
                 '📱 Te notificaremos cuando esté resuelto.');
+
+            // Mostrar botones de navegación
+            await this.messageService.sendNavigationButtons(
+                user.phoneNumber,
+                '🔐 Recuperación de Contraseña',
+                '¿Qué deseas hacer ahora?'
+            );
 
             // Limpiar sesión
             this.resetPasswordSession(session);
@@ -271,13 +283,11 @@ export class PasswordChangeFlow extends BaseConversationFlow {
 
         if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\?]/.test(password)) {
             errors.push('• Debe contener al menos 1 carácter especial');
-        }
-
-        // Verificar patrones comunes débiles
+        }        // Verificar patrones comunes débiles
         const weakPatterns = [
             /^123456/,
             /^password/i,
-            /^admin/i,
+            /^admin\d+/i,
             /^qwerty/i,
             /^conecta/i
         ];
