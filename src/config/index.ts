@@ -6,7 +6,7 @@ export const config = {
         accessToken: process.env.META_ACCESS_TOKEN || '',
         webhookVerifyToken: process.env.WEBHOOK_VERIFY_TOKEN || '',
         phoneNumberId: process.env.PHONE_NUMBER_ID || '',
-        version: 'v18.0'
+        version: 'v23.0'
     }, wisphub: {
         baseUrl: process.env.WISPHUB_API_URL || '',
         apiKey: process.env.WISPHUB_API_KEY || '',

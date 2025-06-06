@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { config } from '../config';
 
 export interface ImageMetadata {
@@ -33,9 +33,7 @@ export class ImageStorageService {
         if (!fs.existsSync(ImageStorageService.RECEIPTS_DIR)) {
             fs.mkdirSync(ImageStorageService.RECEIPTS_DIR, { recursive: true });
         }
-    }
-
-    /**
+    }    /**
      * Descarga y guarda una imagen desde WhatsApp
      */
     async downloadAndSaveImage(
@@ -46,32 +44,41 @@ export class ImageStorageService {
         try {
             console.log(`📥 Descargando imagen ${imageId} para usuario ${userPhone}`);
 
-            // Obtener metadata de la imagen desde WhatsApp API
-            const mediaResponse = await axios.get(
-                `https://graph.facebook.com/${config.meta.version}/${imageId}`,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${config.meta.accessToken}`
-                    }
+            // Paso 1: Obtener el URL temporal de descarga del medio
+            // Según la documentación de WhatsApp, primero debemos obtener una URL para descargar el medio
+            const mediaUrl = `https://graph.facebook.com/${config.meta.version}/${imageId}`;
+            console.log(`🔗 Obteniendo URL para medio: ${mediaUrl}`);
+
+            const mediaResponse = await axios.get(mediaUrl, {
+                headers: {
+                    'Authorization': `Bearer ${config.meta.accessToken}`
                 }
-            );
+            });
 
-            const mediaData = mediaResponse.data;
-            const mediaUrl = mediaData.url;
-            const mimeType = mediaData.mime_type || 'image/jpeg';
+            if (!mediaResponse.data || !mediaResponse.data.url) {
+                console.error('❌ No se pudo obtener la URL de descarga del medio:', mediaResponse.data);
+                return null;
+            }
 
-            // Descargar la imagen
-            const imageResponse = await axios.get(mediaUrl, {
+            const downloadUrl = mediaResponse.data.url;
+            console.log(`✅ URL de descarga obtenida: ${downloadUrl}`);
+
+            // Paso 2: Descargar el medio usando la URL temporal
+            const imageResponse = await axios.get(downloadUrl, {
                 headers: {
                     'Authorization': `Bearer ${config.meta.accessToken}`
                 },
                 responseType: 'arraybuffer'
             });
 
-            // Generar nombre de archivo único
+            // Intentar determinar el tipo MIME basado en los headers de respuesta
+            const contentType = imageResponse.headers['content-type'] || mediaResponse.data.mime_type || 'image/jpeg';
+            const mimeType = contentType;// Generar nombre de archivo único
             const timestamp = new Date();
             const extension = this.getExtensionFromMimeType(mimeType);
-            const fileName = `${userPhone}_${timestamp.getTime()}_${imageId}${extension}`;
+            // Sanitizar el ID de la imagen para usarlo en el nombre del archivo
+            const sanitizedId = imageId.replace(/[^a-zA-Z0-9]/g, '_');
+            const fileName = `${userPhone}_${timestamp.getTime()}_${sanitizedId}${extension}`;
 
             // Determinar directorio según el propósito
             const targetDir = purpose === 'payment_receipt' ? ImageStorageService.RECEIPTS_DIR : ImageStorageService.IMAGES_DIR;
@@ -79,6 +86,8 @@ export class ImageStorageService {
 
             // Guardar archivo
             fs.writeFileSync(filePath, imageResponse.data);
+
+            console.log(`✅ Archivo guardado con nombre: ${fileName}`);
 
             const metadata: ImageMetadata = {
                 id: imageId,
@@ -90,15 +99,48 @@ export class ImageStorageService {
                 purpose: purpose,
                 localPath: filePath,
                 originalUrl: mediaUrl
-            };
-
-            console.log(`✅ Imagen guardada exitosamente: ${filePath}`);
+            }; console.log(`✅ Imagen guardada exitosamente: ${filePath}`);
             console.log(`📊 Tamaño: ${Math.round(metadata.size / 1024)} KB`);
 
             return metadata;
 
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('❌ Error descargando imagen:', error);
+
+            // Tipificar el error como AxiosError para acceder a sus propiedades
+            const axiosError = error as AxiosError;
+
+            // Depuración detallada en caso de error de API
+            if (axiosError.response) {
+                try {
+                    // Si el error tiene datos de respuesta en formato buffer, convertirlo a texto
+                    if (axiosError.response.data && typeof axiosError.response.data === 'object') {
+                        if (Buffer.isBuffer(axiosError.response.data)) {
+                            const errorBody = (axiosError.response.data as Buffer).toString('utf8');
+                            console.error('🔍 Respuesta de error detallada:', errorBody);
+
+                            try {
+                                // Intentar parsear como JSON si es posible
+                                const errorJson = JSON.parse(errorBody);
+                                console.error('📋 Error JSON:', JSON.stringify(errorJson, null, 2));
+                            } catch (parseError) {
+                                // Si no se puede parsear, mostrar como texto
+                                console.error('📝 Cuerpo de respuesta (texto):', errorBody);
+                            }
+                        } else {
+                            console.error('📋 Datos de respuesta:', axiosError.response.data);
+                        }
+                    }
+
+                    console.error('🌐 URL solicitada:', axiosError.config?.url);
+                    console.error('🔢 Código de estado:', axiosError.response.status);
+                    console.error('📝 Mensaje de estado:', axiosError.response.statusText);
+                    console.error('🔤 Headers de respuesta:', axiosError.response.headers);
+                } catch (logError) {
+                    console.error('❌ Error al procesar detalles del error:', logError);
+                }
+            }
+
             return null;
         }
     }

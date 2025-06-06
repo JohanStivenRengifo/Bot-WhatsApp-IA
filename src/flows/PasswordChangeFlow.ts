@@ -22,6 +22,11 @@ export class PasswordChangeFlow extends BaseConversationFlow {
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'passwordChange') {
+            return user.authenticated;
+        }
+
         const extractedCommand = extractMenuCommand(message);
 
         return (
@@ -317,14 +322,13 @@ export class PasswordChangeFlow extends BaseConversationFlow {
     private async hashPassword(password: string): Promise<string> {
         // En implementación real, usar bcrypt o similar
         return Buffer.from(password).toString('base64');
-    }
-
-    /**
+    }    /**
      * Resetea el estado de sesión de contraseña
      */
     private resetPasswordSession(session: SessionData): void {
         session.changingPassword = false;
         session.step = undefined;
         session.newPassword = undefined;
+        session.flowActive = ''; // Limpiar estado de flujo activo
     }
 }

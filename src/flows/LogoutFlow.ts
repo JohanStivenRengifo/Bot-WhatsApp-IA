@@ -14,11 +14,15 @@ export class LogoutFlow extends BaseConversationFlow {
         securityService: SecurityService
     ) {
         super(messageService, securityService);
-    }
-
-    /**
+    }    /**
      * Verifica si este flujo debe manejar el mensaje actual
-     */    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */
+    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'logout') {
+            return user.authenticated;
+        }
+
         const extractedCommand = extractMenuCommand(message);
 
         return (
@@ -38,7 +42,8 @@ export class LogoutFlow extends BaseConversationFlow {
                 '👋 **¡Sesión Finalizada!**\n\n' +
                 'Has cerrado tu sesión correctamente.\n\n' +
                 '🔒 Por seguridad, toda tu información ha sido eliminada de nuestra memoria temporal.\n\n' +
-                '💬 Escribe "Soporte" cuando quieras volver a usar nuestros servicios.');
+                '💬 Escribe "Soporte" cuando quieras volver a usar nuestros servicios.' +
+                'Para volver a ingresar, *digita tu Numero de Cedula o ID de Servicio*');
 
             // Limpiar la sesión
             this.clearSession(session);

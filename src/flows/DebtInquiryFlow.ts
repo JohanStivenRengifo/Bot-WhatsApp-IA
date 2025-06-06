@@ -9,24 +9,23 @@ import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 export class DebtInquiryFlow extends BaseConversationFlow {
     readonly name: string = 'debtInquiry';
 
-    private customerService: CustomerService;
-
-    constructor(
+    private customerService: CustomerService; constructor(
         messageService: MessageService,
         securityService: SecurityService,
         customerService: CustomerService
     ) {
         super(messageService, securityService);
         this.customerService = customerService;
-    }    /**
+    }
+
+    /**
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         const extractedCommand = extractMenuCommand(message);
 
         return user.authenticated && (
-            extractedCommand === 'deuda' ||
-            isMenuCommand(message, ['consultar deuda', 'saldo pendiente', 'ver saldo'])
+            extractedCommand === 'deuda' || isMenuCommand(message, ['consultar deuda', 'saldo pendiente', 'ver saldo'])
         );
     }
 
@@ -39,8 +38,27 @@ export class DebtInquiryFlow extends BaseConversationFlow {
             let debtInfo;
             try {
                 debtInfo = await this.customerService.getCustomerDebt(user.customerId!);
-            } catch (apiError) {
+            } catch (apiError: any) {
                 console.error('Error en API al consultar deuda:', apiError);
+
+                // Manejo específico para errores 404
+                if (apiError.response?.status === 404) {
+                    await this.messageService.sendTextMessage(user.phoneNumber,
+                        '✅ *Estado de Cuenta*\n\n' +
+                        '🎉 No se encontraron deudas pendientes en tu cuenta.\n' +
+                        '📊 Tu servicio está al día.\n\n' +
+                        '💡 Si acabas de realizar un pago, puede tomar hasta 24 horas en reflejarse en el sistema.');
+
+                    // Ofrecer volver al menú principal
+                    await this.messageService.sendNavigationButtons(
+                        user.phoneNumber,
+                        '✅ Cuenta al Día',
+                        '¿Qué te gustaría hacer ahora?'
+                    );
+                    return true;
+                }
+
+                // Para otros errores de API
                 debtInfo = null;
             }
 
@@ -71,7 +89,9 @@ export class DebtInquiryFlow extends BaseConversationFlow {
                     `💡 Paga antes del vencimiento para evitar suspensión del servicio.`;
             }
 
-            await this.messageService.sendTextMessage(user.phoneNumber, debtMessage);            // Ofrecer opciones adicionales si hay deuda
+            await this.messageService.sendTextMessage(user.phoneNumber, debtMessage);
+
+            // Ofrecer opciones adicionales si hay deuda
             if (debtInfo.totalDebt > 0) {
                 const paymentOptionsMessage = {
                     messaging_product: 'whatsapp',

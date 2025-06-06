@@ -14,3 +14,5 @@ export * from './PaymentPointsFlow';
 export * from './PaymentReceiptFlow';
 export * from './DebtInquiryFlow';
 export * from './LogoutFlow';
+export * from './AgentHandoverFlow';
+export * from './SuspendedServiceFlow';

@@ -8,12 +8,10 @@ import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
  * Actúa como despachador central que redirige a los flujos específicos
  */
 export class ClientMenuFlow extends BaseConversationFlow {
-    readonly name: string = 'clientMenu';
-
-    // Opciones válidas del menú principal
+    readonly name: string = 'clientMenu';    // Opciones válidas del menú principal
     private readonly menuOptions = [
         'ping', 'ticket', 'factura', 'deuda', 'puntos_pago',
-        'cambiar_clave', 'mejorar_plan', 'validar_pago', 'menu', 'inicio'
+        'cambiar_clave', 'mejorar_plan', 'validar_pago', 'hablar_agente', 'cerrar_sesion', 'menu', 'inicio'
     ];
 
     constructor(messageService: MessageService, securityService: SecurityService) {
@@ -87,9 +85,7 @@ export class ClientMenuFlow extends BaseConversationFlow {
                     // Activar cambio de contraseña
                     session.changingPassword = true;
                     session.flowActive = 'passwordChange';
-                    return false; // Permitir que PasswordChangeFlow maneje
-
-                case 'mejorar_plan':
+                    return false; // Permitir que PasswordChangeFlow maneje                case 'mejorar_plan':
                     // Activar mejora de plan
                     session.upgradingPlan = true;
                     session.flowActive = 'planUpgrade';
@@ -97,8 +93,19 @@ export class ClientMenuFlow extends BaseConversationFlow {
 
                 case 'validar_pago':
                     // Activar validación de pago
+                    console.log(`Redirigiendo al flujo de validación de pago para ${user.phoneNumber}`);
                     session.flowActive = 'paymentReceipt';
                     return false; // Permitir que PaymentReceiptFlow maneje
+
+                case 'hablar_agente':
+                    // Activar handover a agente humano
+                    session.flowActive = 'agentHandover';
+                    return false; // Permitir que AgentHandoverFlow maneje
+
+                case 'cerrar_sesion':
+                    // Activar cierre de sesión
+                    session.flowActive = 'logout';
+                    return false; // Permitir que LogoutFlow maneje
 
                 default:
                     // Opción no reconocida, mostrar menú nuevamente

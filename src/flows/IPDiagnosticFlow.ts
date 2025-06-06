@@ -50,6 +50,11 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         if (!user.authenticated) return false;
 
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'ipDiagnostic') {
+            return true;
+        }
+
         // Si ya hay un diagnóstico en progreso, este flujo debe manejar el mensaje
         if (session.diagnosticInProgress === true) return true;
 
@@ -65,7 +70,7 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
             'ping_ip', 'ping ip', 'estado de conexion', 'estado de conexión',
             'verificar estado', 'verificar conexión'
         ]);
-    }    /**
+    }/**
      * Maneja el mensaje dentro del flujo de diagnóstico IP
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -471,11 +476,10 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
                 user.phoneNumber,
                 '🔄 Diagnóstico Completado',
                 '¿Qué te gustaría hacer ahora?'
-            );
-
-            // Marcar que el diagnóstico ha finalizado
+            );            // Marcar que el diagnóstico ha finalizado
             if (session) {
                 session.diagnosticInProgress = false;
+                session.flowActive = ''; // Limpiar estado de flujo activo
             }
 
             console.log(`[IPDiagnostic] ✅ Mensaje enviado exitosamente a ${user.phoneNumber}`);
