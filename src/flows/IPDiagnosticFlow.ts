@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, CustomerService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 import { config } from '../config';
 import axios from 'axios';
 
@@ -43,9 +44,7 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
     ) {
         super(messageService, securityService);
         this.customerService = customerService;
-    }
-
-    /**
+    }    /**
      * Verifica si el flujo puede manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -54,28 +53,19 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
         // Si ya hay un diagnóstico en progreso, este flujo debe manejar el mensaje
         if (session.diagnosticInProgress === true) return true;
 
-        const normalizedMessage = message.toLowerCase().trim();
+        const extractedCommand = extractMenuCommand(message);
 
-        // Comandos exactos
-        const pingCommands = [
-            'ping', 'test_conexion', 'test de conexion', 'test de conexión',
+        // Verificar comando directo del menú
+        if (extractedCommand === 'ping') return true;
+
+        // Verificar otros comandos relacionados
+        return isMenuCommand(message, [
+            'test_conexion', 'test de conexion', 'test de conexión',
             'diagnostico_ip', 'diagnóstico ip', 'diagnostico ip',
-            'ping_ip', 'ping ip', 'estado de conexion', 'estado de conexión'
-        ];
-
-        if (pingCommands.includes(normalizedMessage)) return true;
-
-        // Palabras clave
-        return (
-            (normalizedMessage.includes('test') &&
-                (normalizedMessage.includes('conexion') || normalizedMessage.includes('conexión'))) ||
-            ((normalizedMessage.includes('diagnostico') || normalizedMessage.includes('diagnóstico')) &&
-                normalizedMessage.includes('ip')) ||
-            normalizedMessage.includes('ping')
-        );
-    }
-
-    /**
+            'ping_ip', 'ping ip', 'estado de conexion', 'estado de conexión',
+            'verificar estado', 'verificar conexión'
+        ]);
+    }    /**
      * Maneja el mensaje dentro del flujo de diagnóstico IP
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -92,9 +82,21 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
 
             const id_servicio = userData.id_servicio;
 
-            if (!session.diagnosticInProgress) {
-                // Iniciar el proceso de diagnóstico
-                session.diagnosticInProgress = true; await this.messageService.sendTextMessage(
+            // Verificar si el diagnóstico ya está en progreso y si ya se inició la tarea
+            if (session.diagnosticInProgress && session.diagnosticTaskId) {
+                // Ya hay un diagnóstico en progreso, no hacer nada más
+                await this.messageService.sendTextMessage(
+                    user.phoneNumber,
+                    '⏳ Ya tienes un diagnóstico en progreso. Te notificaré cuando esté listo.'
+                );
+                return true;
+            }
+
+            // Iniciar el proceso de diagnóstico si no está en progreso
+            if (!session.diagnosticInProgress || !session.diagnosticTaskId) {
+                // Activar el diagnóstico y limpiar cualquier tarea anterior
+                session.diagnosticInProgress = true;
+                session.diagnosticTaskId = undefined; await this.messageService.sendTextMessage(
                     user.phoneNumber,
                     '🔄 Realizando prueba de conexión...\n\n' +
                     'Este proceso puede tomar entre 30 segundos y 3 minutos.\n' +
@@ -211,10 +213,9 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
             console.log(`[IPDiagnostic] Respuesta de la tarea:`, taskResponse.status, taskResponse.data);
 
             const taskData: WispHubTaskResponse = taskResponse.data; if (taskData.task.status === 'SUCCESS') {
-                // Procesar y mostrar el resultado exitoso
-                console.log(`[IPDiagnostic] Tarea completada exitosamente`);
+                // Procesar y mostrar el resultado exitoso                console.log(`[IPDiagnostic] Tarea completada exitosamente`);
                 console.log(`[IPDiagnostic] Resultado completo:`, JSON.stringify(taskData.task.result, null, 2));
-                await this.showPingResults(user, taskData);
+                await this.showPingResults(user, taskData, session);
             } else if (taskData.task.status === 'PENDING' || taskData.task.status === 'RUNNING' || taskData.task.status === 'STARTED') {
                 // La tarea aún está en proceso
                 if (retryCount < maxRetries) {
@@ -272,7 +273,7 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
     }/**
      * Muestra los resultados del ping al usuario
      */
-    private async showPingResults(user: User, taskData: WispHubTaskResponse): Promise<void> {
+    private async showPingResults(user: User, taskData: WispHubTaskResponse, session: SessionData): Promise<void> {
         let resultMessage = '✅ Prueba completada\n\n';
 
         console.log(`[IPDiagnostic] Procesando resultados de ping...`);
@@ -464,16 +465,27 @@ export class IPDiagnosticFlow extends BaseConversationFlow {
             console.log(`[IPDiagnostic] No hay resultado o no es array`);
             resultMessage += '⚠️ No se obtuvieron detalles específicos del diagnóstico.\n';
             resultMessage += 'Para un análisis más detallado, contacta a soporte técnico.';
-        } console.log(`[IPDiagnostic] Mensaje final a enviar:`, resultMessage);
+        } console.log(`[IPDiagnostic] Mensaje final a enviar:`, resultMessage); try {
+            await this.messageService.sendTextMessage(user.phoneNumber, resultMessage);            // Agregar botones de navegación al finalizar el diagnóstico
+            await this.messageService.sendNavigationButtons(
+                user.phoneNumber,
+                '🔄 Diagnóstico Completado',
+                '¿Qué te gustaría hacer ahora?'
+            );
 
-        try {
-            await this.messageService.sendTextMessage(user.phoneNumber, resultMessage);
+            // Marcar que el diagnóstico ha finalizado
+            if (session) {
+                session.diagnosticInProgress = false;
+            }
+
             console.log(`[IPDiagnostic] ✅ Mensaje enviado exitosamente a ${user.phoneNumber}`);
         } catch (error) {
             console.error(`[IPDiagnostic] ❌ Error enviando mensaje:`, error);
             throw error;
         }
-    }/**
+    }
+
+    /**
      * Decodifica los datos del usuario desde la información almacenada
      * Sobrescribe el método de la clase base para adaptarlo a nuestras necesidades
      */

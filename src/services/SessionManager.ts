@@ -49,9 +49,7 @@ export class SessionManager {
         session.sessionTimeout = setTimeout(async () => {
             await this.handleSessionTimeout(phoneNumber);
         }, SessionManager.SESSION_TIMEOUT_MS);
-    }
-
-    /**
+    }    /**
      * Maneja el timeout de una sesión
      */
     private async handleSessionTimeout(phoneNumber: string): Promise<void> {
@@ -62,9 +60,9 @@ export class SessionManager {
             // Enviar mensaje de timeout
             await this.messageService.sendTextMessage(phoneNumber,
                 '⏰ **Sesión Expirada**\n\n' +
-                'Tu sesión ha expirado por inactividad (10 minutos).\n\n' +
-                '🔐 Por seguridad, deberás autenticarte nuevamente para acceder a los servicios.\n\n' +
-                '💡 Escribe cualquier mensaje para comenzar una nueva sesión.');
+                'Tu sesión ha caducado por inactividad.\n\n' +
+                '¡Vuelve a escribir Soporte para continuar!\n\n' +
+                '🔐 Por seguridad, deberás autenticarte nuevamente para acceder a los servicios.');
 
             // Limpiar sesión
             this.clearSession(phoneNumber);

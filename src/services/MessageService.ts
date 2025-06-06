@@ -140,10 +140,9 @@ export class MessageService {
                                     id: 'ping',
                                     title: '📡 Test de Conexión',
                                     description: 'Verificar estado de tu conexión'
-                                },
-                                {
+                                }, {
                                     id: 'ticket',
-                                    title: '🎫 Crear Ticket',
+                                    title: '🔧 Soporte Técnico',
                                     description: 'Reportar problemas técnicos'
                                 }
                             ]
@@ -167,8 +166,7 @@ export class MessageService {
                                     description: 'Ubicaciones para pagar'
                                 }
                             ]
-                        },
-                        {
+                        }, {
                             title: 'Cuenta',
                             rows: [
                                 {
@@ -180,6 +178,20 @@ export class MessageService {
                                     id: 'mejorar_plan',
                                     title: '⬆️ Mejorar Plan',
                                     description: 'Upgrade de velocidad'
+                                }, {
+                                    id: 'validar_pago',
+                                    title: '💳 Validar Pago',
+                                    description: 'Subir comprobante de pago'
+                                }
+                            ]
+                        },
+                        {
+                            title: 'General',
+                            rows: [
+                                {
+                                    id: 'cerrar_sesion',
+                                    title: '👋 Cerrar Sesión',
+                                    description: 'Finalizar sesión actual'
                                 }
                             ]
                         }
@@ -298,5 +310,52 @@ export class MessageService {
 
     async sendErrorMessage(phoneNumber: string, text: string): Promise<void> {
         await this.sendTextMessage(phoneNumber, `❌ ${text}`);
+    }
+
+    /**
+     * Envía botones de acción al usuario (como Volver al Menú o Finalizar)
+     */
+    async sendActionButtons(phoneNumber: string, headerText: string, bodyText: string, buttons: { id: string, title: string }[]): Promise<void> {
+        const actionMessage = {
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'button',
+                header: {
+                    type: 'text',
+                    text: headerText
+                },
+                body: {
+                    text: bodyText
+                },
+                action: {
+                    buttons: buttons.map(button => ({
+                        type: 'reply',
+                        reply: {
+                            id: button.id,
+                            title: button.title
+                        }
+                    }))
+                }
+            }
+        };
+
+        await this.sendMessage(actionMessage);
+    }
+
+    /**
+     * Envía botones de navegación estándar (Menú Principal y Finalizar)
+     */
+    async sendNavigationButtons(phoneNumber: string, headerText: string, bodyText: string): Promise<void> {
+        await this.sendActionButtons(
+            phoneNumber,
+            headerText,
+            bodyText,
+            [
+                { id: 'menu', title: '🏠 Menú Principal' },
+                { id: 'finalizar', title: '✅ Finalizar' }
+            ]
+        );
     }
 }

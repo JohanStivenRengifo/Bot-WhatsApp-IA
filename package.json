@@ -11,7 +11,9 @@
     "lint:fix": "eslint src/**/*.ts --fix",
     "test": "jest",
     "test:watch": "jest --watch",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "sync-invoices": "node scripts/sync-invoices.js",
+    "sync-invoices:force": "rm -f invoices_cache.json && node scripts/sync-invoices.js"
   },
   "repository": {
     "type": "git",

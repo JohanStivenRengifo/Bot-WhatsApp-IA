@@ -1,6 +1,7 @@
 # Dependencias
 node_modules/
 package-lock.json
+invoices_cache.json
 
 # Archivos de entorno
 .env

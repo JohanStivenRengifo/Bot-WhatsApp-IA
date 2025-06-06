@@ -21,11 +21,12 @@ export class InitialSelectionFlow extends BaseConversationFlow {
         // 1. El usuario no está autenticado y no tiene un flujo activo
         // 2. Es el primer mensaje del usuario
         // 3. El usuario responde con ventas o soporte a la selección inicial
-        const isInitialMessage = !user.authenticated && !session.flowActive && !user.hasSelectedService;
-        const isSelectionResponse = session.flowActive === 'initialSelection' &&
+        const isInitialMessage = !user.authenticated && !session.flowActive && !user.hasSelectedService; const isSelectionResponse = session.flowActive === 'initialSelection' &&
             (message.toLowerCase().includes('ventas') ||
                 message.toLowerCase().includes('soporte') ||
-                message === 'ventas' || message === 'soporte');
+                message.toLowerCase().includes('ya soy cliente') ||
+                message === 'ventas' || message === 'soporte' ||
+                message === 'Ya soy cliente');
 
         return isInitialMessage || isSelectionResponse;
     }    /**
@@ -97,9 +98,7 @@ export class InitialSelectionFlow extends BaseConversationFlow {
      * Maneja la respuesta del usuario a la selección inicial
      */
     private async handleSelection(user: User, message: string, session: SessionData): Promise<boolean> {
-        const messageText = message.toLowerCase();
-
-        if (messageText.includes('ventas') || message === 'ventas') {
+        const messageText = message.toLowerCase(); if (messageText.includes('ventas') || message === 'ventas') {
             // Usuario seleccionó ventas
             session.selectedService = 'ventas';
             session.flowActive = 'sales';
@@ -109,7 +108,8 @@ export class InitialSelectionFlow extends BaseConversationFlow {
             await this.messageService.sendPrivacyPolicyMessage(user.phoneNumber);
             return true;
         }
-        else if (messageText.includes('soporte') || message === 'soporte') {
+        else if (messageText.includes('soporte') || messageText.includes('ya soy cliente') ||
+            message === 'soporte' || message === 'Ya soy cliente') {
             // Usuario seleccionó acceder como cliente
             session.selectedService = 'soporte';
             session.flowActive = 'support';
@@ -117,6 +117,7 @@ export class InitialSelectionFlow extends BaseConversationFlow {
 
             // Mostrar política de privacidad para soporte
             await this.messageService.sendPrivacyPolicyMessage(user.phoneNumber);
+            return true;
             return true;
         }
         else {

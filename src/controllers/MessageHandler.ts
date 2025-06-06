@@ -13,18 +13,21 @@ import {
     ConversationFlowManager,
     AuthenticationFlow,
     PrivacyPolicyFlow,
-    MainMenuFlow,
     InitialSelectionFlow,
+    ClientMenuFlow,
     SalesFlow,
-    TechnicalSupportFlow,
     InvoicesFlow,
     TicketCreationFlow,
     PasswordChangeFlow,
     PlanUpgradeFlow,
     IPDiagnosticFlow,
-    PaymentPointsFlow
+    PaymentPointsFlow,
+    PaymentReceiptFlow,
+    DebtInquiryFlow,
+    LogoutFlow
 } from '../flows';
 import { isValidPassword } from '../utils';
+import { extractMenuCommand } from '../utils/messageUtils';
 
 export class MessageHandler {
     private users: Map<string, User> = new Map();
@@ -42,13 +45,11 @@ export class MessageHandler {
         this.ticketService = new TicketService();
         this.paymentService = new PaymentService();
         this.aiService = new AIService();
-        this.securityService = new SecurityService();
-
-        // Inicializar el gestor de sesiones
+        this.securityService = new SecurityService();        // Inicializar el gestor de sesiones
         this.sessionManager = new SessionManager(this.messageService);
 
-        // Inicializar el gestor de flujos
-        this.flowManager = new ConversationFlowManager();
+        // Inicializar el gestor de flujos con el servicio de mensajes
+        this.flowManager = new ConversationFlowManager(this.messageService);
 
         // Registrar los flujos de conversación
         this.registerConversationFlows();
@@ -57,12 +58,8 @@ export class MessageHandler {
         setInterval(() => {
             this.sessionManager.cleanupExpiredSessions();
         }, 5 * 60 * 1000); // Cada 5 minutos
-    }
-
-    async processMessage(message: WhatsAppMessage): Promise<void> {
+    } async processMessage(message: WhatsAppMessage): Promise<void> {
         const phoneNumber = message.from;
-        const messageType = message.type;
-        let messageText = '';
 
         // Check rate limiting first
         const rateLimitCheck = this.securityService.checkRateLimit(phoneNumber);
@@ -87,19 +84,6 @@ export class MessageHandler {
             return;
         }
 
-        // Extract message text based on type
-        switch (messageType) {
-            case 'text':
-                messageText = message.text?.body || '';
-                break;
-            case 'interactive':
-                messageText = message.interactive?.button_reply?.id ||
-                    message.interactive?.list_reply?.id || '';
-                break;
-            default:
-                messageText = 'unsupported_message_type';
-        }
-
         // Get or create user
         let user = this.users.get(phoneNumber);
         if (!user) {
@@ -109,11 +93,26 @@ export class MessageHandler {
                 acceptedPrivacyPolicy: false
             };
             this.users.set(phoneNumber, user);
+        }        // Extract text from message based on type
+        let messageText = '';
+        if (message.type === 'text' && message.text) {
+            messageText = message.text.body;
+        } else if (message.type === 'interactive') {
+            if (message.interactive?.button_reply) {
+                // Guardar el mensaje completo, incluido el título
+                messageText = message.interactive.button_reply.title;
+            } else if (message.interactive?.list_reply) {
+                // Guardar el mensaje completo, incluido el título y descripción
+                messageText = message.interactive.list_reply.title;
+                if (message.interactive.list_reply.description) {
+                    messageText += '\n' + message.interactive.list_reply.description;
+                }
+            }
         }
 
         // Process message based on user state
         await this.handleUserMessage(user, messageText);
-    } private async handleUserMessage(user: User, message: string): Promise<void> {
+    } private async handleUserMessage(user: User, messageText: string): Promise<void> {
         try {
             // Obtener o crear una sesión para este usuario
             let session = this.userSessions.get(user.phoneNumber);
@@ -139,10 +138,8 @@ export class MessageHandler {
 
             // Actualizar última actividad
             user.lastActivity = new Date();
-            this.users.set(user.phoneNumber, user);
-
-            // Delegar TODA la lógica al gestor de flujos
-            const handled = await this.flowManager.processMessage(user, message, session);
+            this.users.set(user.phoneNumber, user);            // Delegar TODA la lógica al gestor de flujos
+            const handled = await this.flowManager.processMessage(user, messageText, session);
 
             // Si ningún flujo manejó el mensaje, mostrar mensaje de ayuda simple
             if (!handled) {
@@ -159,7 +156,7 @@ export class MessageHandler {
             await this.messageService.sendTextMessage(user.phoneNumber,
                 'Ha ocurrido un error técnico. Por favor, intenta nuevamente en unos minutos.');
         }
-    }    /**
+    }/**
      * Registra todos los flujos de conversación disponibles
      */
     private registerConversationFlows(): void {
@@ -176,42 +173,52 @@ export class MessageHandler {
             new AuthenticationFlow(this.messageService, this.securityService, this.customerService)
         );
 
-        // Registrar el flujo de soporte técnico
+        // Registrar el flujo de menú de cliente (para navegación post-autenticación)
         this.flowManager.registerFlow(
-            new TechnicalSupportFlow(this.messageService, this.securityService, this.customerService)
-        );        // Registrar el flujo de mejora de plan (antes del SalesFlow para mayor prioridad)
+            new ClientMenuFlow(this.messageService, this.securityService)
+        );
+
+        // Registrar el flujo de creación de tickets (alta prioridad)
+        this.flowManager.registerFlow(
+            new TicketCreationFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        // Registrar el flujo de mejora de plan (antes del SalesFlow para mayor prioridad)
         this.flowManager.registerFlow(
             new PlanUpgradeFlow(this.messageService, this.securityService, this.customerService, this.ticketService)
         );
 
         // Registrar el flujo de ventas
         this.flowManager.registerFlow(
-            new SalesFlow(this.messageService, this.securityService, this.aiService, this.customerService));
-
-        // Registrar el flujo de facturas
+            new SalesFlow(this.messageService, this.securityService, this.aiService, this.customerService));        // Registrar el flujo de facturas
         this.flowManager.registerFlow(
             new InvoicesFlow(this.messageService, this.securityService, this.customerService)
         );
 
-        // Registrar el flujo de creación de tickets
+        // Registrar el flujo de consulta de deuda
         this.flowManager.registerFlow(
-            new TicketCreationFlow(this.messageService, this.securityService, this.ticketService)
-        );        // Registrar el flujo de cambio de contraseña
+            new DebtInquiryFlow(this.messageService, this.securityService, this.customerService)
+        );
+
+        // Registrar el flujo de cambio de contraseña
         this.flowManager.registerFlow(
             new PasswordChangeFlow(this.messageService, this.securityService, this.ticketService)
         );// Registrar el flujo de puntos de pago
         this.flowManager.registerFlow(
             new PaymentPointsFlow(this.messageService)
-        );
-
-        // Registrar el flujo de diagnóstico IP
+        );        // Registrar el flujo de diagnóstico IP
         this.flowManager.registerFlow(
             new IPDiagnosticFlow(this.messageService, this.securityService, this.customerService)
         );
 
-        // Registrar el flujo de menú principal (debe ser el último para que funcione como fallback)
+        // Registrar el flujo de comprobantes de pago
         this.flowManager.registerFlow(
-            new MainMenuFlow(this.messageService, this.securityService)
+            new PaymentReceiptFlow()
+        );
+
+        // Registrar el flujo de cierre de sesión
+        this.flowManager.registerFlow(
+            new LogoutFlow(this.messageService, this.securityService)
         );
     }
 }

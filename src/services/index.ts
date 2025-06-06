@@ -6,3 +6,4 @@ export * from './AIService';
 export * from './SecurityService';
 export * from './SessionManager';
 export * from './MultiServiceManager';
+export * from './InvoiceCacheService';

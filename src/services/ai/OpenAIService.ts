@@ -77,6 +77,73 @@ export class OpenAIService implements IAIService {
         }
     }
 
+    /**
+     * Analiza una imagen usando OpenAI Vision API
+     */
+    async analyzeImage(imageDataUrl: string, prompt: string): Promise<AIResponse> {
+        try {
+            const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+                model: 'gpt-4-vision-preview',
+                messages: [
+                    {
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'text',
+                                text: prompt
+                            },
+                            {
+                                type: 'image_url',
+                                image_url: {
+                                    url: imageDataUrl,
+                                    detail: 'high'
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens: 500,
+                temperature: 0.1
+            }, {
+                headers: {
+                    'Authorization': `Bearer ${config.ai.openai.apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            });
+
+            const aiMessage = response.data.choices[0].message.content.trim();
+
+            return {
+                success: true,
+                message: aiMessage,
+                service: this.name
+            };
+        } catch (error) {
+            console.error('OpenAI Vision service error:', error);
+
+            let errorMessage = 'Error interno del servicio de análisis de imagen';
+            if (axios.isAxiosError(error)) {
+                if (error.response?.status === 401) {
+                    errorMessage = 'Error de autenticación con OpenAI Vision';
+                } else if (error.response?.status === 429) {
+                    errorMessage = 'Límite de uso de OpenAI Vision alcanzado';
+                } else if (error.response?.status === 400) {
+                    errorMessage = 'Imagen no válida o formato no soportado';
+                } else if (error.code === 'ECONNABORTED') {
+                    errorMessage = 'Timeout en la conexión con OpenAI Vision';
+                }
+            }
+
+            return {
+                success: false,
+                message: '',
+                service: this.name,
+                error: errorMessage
+            };
+        }
+    }
+
     private buildPrompt(message: string): string {
         return `Eres un asistente de soporte técnico para Conecta2 Telecomunicaciones SAS, una empresa de internet en Colombia. 
 Responde de manera amigable, profesional y concisa.

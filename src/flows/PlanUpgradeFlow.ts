@@ -1,6 +1,7 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
 import { MessageService, SecurityService, CustomerService, TicketService } from '../services';
+import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 
 /**
  * Flujo completamente autónomo para mejora de planes de internet y adición de planes de TV
@@ -48,15 +49,13 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         // Este flujo maneja únicamente mejoras de plan autónomas
-        return (
+        const extractedCommand = extractMenuCommand(message); return (
             user.authenticated &&
-            (message === 'mejorar_plan' ||
-                message === 'plan_upgrade' ||
-                message === 'upgrade_plan' ||
-                message === 'mejora_plan' ||
+            (extractedCommand === 'mejorar_plan' ||
+                isMenuCommand(message, ['plan_upgrade', 'upgrade_plan', 'mejora_plan', 'mejorar plan', '⬆️ mejorar plan']) ||
                 session.upgradingPlan === true)
         );
-    }    /**
+    }/**
      * Maneja el proceso completo de mejora de planes de forma autónoma
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -72,10 +71,11 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
                     '2️⃣ Realizar el pago pendiente si lo hubiera\n' +
                     '3️⃣ Contactar a nuestro equipo de atención al cliente');
                 return true;
-            }
-
-            // Inicializar flujo si no está activo
+            }            // Inicializar flujo si no está activo o continuar si ya fue activado
             if (!session.upgradingPlan) {
+                return await this.initializePlanUpgrade(user, session);
+            } else if (!session.step) {
+                // El flujo ya está activo pero no tiene step definido (recién activado por ClientMenuFlow)
                 return await this.initializePlanUpgrade(user, session);
             }
 
