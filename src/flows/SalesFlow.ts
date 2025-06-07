@@ -25,18 +25,14 @@ export class SalesFlow extends BaseConversationFlow {
         { id: 'plan_70', name: '70 Mbps', speed: '300/150 Mbps', price: 68000, description: 'Velocidad premium para empresas' },
         { id: 'plan_80', name: '80 Mbps', speed: '500/250 Mbps', price: 75000, description: 'Ultra velocidad para uso intensivo' },
         { id: 'plan_100', name: '100 Mbps', speed: '1000/500 Mbps', price: 80000, description: 'Máxima velocidad para hogares' }
-    ];
-
-    // Planes de TV disponibles - configuración estática para autonomía 
+    ];    // Planes de TV disponibles - configuración estática para autonomía
     private readonly tvPlans = [
-        { id: 'tv_hd', name: 'TV Completo', channels: '80+ canales HD', price: 40000, description: '+85 Canales en HD' }
-    ];
-
-    // Combos disponibles con descuentos especiales 
+        { id: 'tv_hd', name: 'TV Completo', channels: '85+ canales HD', price: 40000, description: '+85 Canales en HD' }
+    ];    // Combos disponibles con descuentos especiales
     private readonly comboPlan = [
-        { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000 },
-        { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 115000, comboPrice: 70000 },
-        { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 155000, comboPrice: 100000 }
+        { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000, discount: 20000 },
+        { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 90000, comboPrice: 70000, discount: 20000 },
+        { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 120000, comboPrice: 100000, discount: 20000 }
     ];
 
     constructor(
@@ -90,7 +86,7 @@ export class SalesFlow extends BaseConversationFlow {
             // Usuario quiere contratar un plan
             hasContractingIntent
         );
-    }/**
+    }    /**
      * Maneja el mensaje del usuario
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -131,21 +127,53 @@ export class SalesFlow extends BaseConversationFlow {
                 message.toLowerCase().includes('enviar propuesta')) {
 
                 return await this.generateAndSendQuotation(user, message, session);
-            }            // Construir contexto para la IA
+            }
+
+            // Verificar si hay una respuesta predefinida para esta consulta
+            const predefinedResponse = this.getPredefinedResponse(message);
+            if (predefinedResponse) {
+                // Enviar respuesta predefinida sin usar IA
+                await this.messageService.sendTextMessage(user.phoneNumber, predefinedResponse);
+
+                // Guardar en historial
+                session.salesHistory.push({
+                    user: message,
+                    ai: predefinedResponse,
+                    timestamp: new Date()
+                });
+
+                return true;
+            }            // Construir contexto para la IA (solo si es necesario usar IA)
             const context = this.buildSalesContext(user, session);
 
-            // Obtener respuesta de la IA
-            const aiResponse = await this.aiService.getSalesResponse(message, user, session.salesHistory);
+            try {
+                // Obtener respuesta de la IA para consultas no estándar
+                const aiResponse = await this.aiService.getSalesResponse(message, user, session.salesHistory.slice(-2));
 
-            // Enviar respuesta al usuario
-            await this.messageService.sendTextMessage(user.phoneNumber, aiResponse);
+                // Enviar respuesta al usuario
+                await this.messageService.sendTextMessage(user.phoneNumber, aiResponse);
 
-            // Guardar en historial
-            session.salesHistory.push({
-                user: message,
-                ai: aiResponse,
-                timestamp: new Date()
-            });
+                // Guardar en historial
+                session.salesHistory.push({
+                    user: message,
+                    ai: aiResponse,
+                    timestamp: new Date()
+                });
+            } catch (error) {
+                // Si falla la IA, usar respuesta de fallback
+                console.error('Error obteniendo respuesta de IA:', error);
+                const fallbackResponse = this.getFallbackResponse(message);
+
+                // Enviar respuesta de fallback
+                await this.messageService.sendTextMessage(user.phoneNumber, fallbackResponse);
+
+                // Guardar en historial
+                session.salesHistory.push({
+                    user: message,
+                    ai: fallbackResponse,
+                    timestamp: new Date()
+                });
+            }
 
             return true;
         } catch (error) {
@@ -166,64 +194,32 @@ export class SalesFlow extends BaseConversationFlow {
             item.user.toLowerCase().includes('contratar') ||
             item.ai.toLowerCase().includes('te envío la propuesta') ||
             item.ai.toLowerCase().includes('recibirás un correo')
-        );
-
+        );        // Contexto mínimo viable para reducir tokens enviados a la IA
         let context = `
-INFORMACIÓN DE LA EMPRESA:
-Eres Andrea, asesora comercial amigable de Conecta2 Telecomunicaciones en Piendamó, Cauca, Colombia.
-Empresa especializada en internet y televisión por fibra óptica.
+INFORMACIÓN ESENCIAL:
+Eres Andrea, asesora comercial de Conecta2 Telecomunicaciones (Piendamó, Cauca, Colombia).
+${ventaCerrada ? '⚠️ NOTA IMPORTANTE: EL CLIENTE YA SOLICITÓ UNA PROPUESTA O CONTRATACIÓN. Confirma esto y finaliza amablemente.' : ''}
 
-PLANES EXACTOS DISPONIBLES:
+PLANES DISPONIBLES (precios exactos, no modificar):
+INTERNET: 30Mbps($40k), 50Mbps($50k), 60Mbps($60k), 70Mbps($68k), 80Mbps($75k), 100Mbps($80k)
+TV: TV Completo ($40k, 85+ canales HD)
+COMBOS: Básico(30Mbps+TV=$60k, ahorro $20k), Familiar(50Mbps+TV=$70k, ahorro $20k), Premium(100Mbps+TV=$100k, ahorro $20k)
 
-INTERNET SOLO:
-• 30 Mbps: $40.000/mes (10/5 Mbps)
-• 50 Mbps: $50.000/mes (10/5 Mbps)
-• 60 Mbps: $60.000/mes (10/5 Mbps)
-• 70 Mbps: $68.000/mes (10/5 Mbps)
-• 80 Mbps: $75.000/mes (10/5 Mbps)
-• 100 Mbps: $80.000/mes (10/5 Mbps)
+INSTRUCCIONES:
+- Sé amigable y directo, no insistente
+- Respuestas breves (máx 3-4 líneas)
+- Si no sabes algo, sugiere contactar a un agente
+- Para consultas sobre precios, instalación o cobertura, usa los datos exactos
+`;
 
-TELEVISIÓN SOLA:
-• TV Completo: $40.000/mes (80+ canales HD)
-
-PAQUETES COMBINADOS (MUY POPULARES):
-• Pack Básico: Internet 30 Mbps + TV HD (85+ Canales) = $60.000/mes (Ahorro: $20.000)
-• Pack Estándar: Internet 50 Mbps + TV HD (85+ Canales) = $70.000/mes (Ahorro: $20.000)  
-• Pack Premium: Internet 100 Mbps + TV HD (85+ Canales) = $100.000/mes (Ahorro: $20.000)
-
-VENTAJAS:
-- Fibra óptica 100% - Soporte 24/7 - Sin permanencia
-
-INSTRUCCIONES IMPORTANTES:
-${ventaCerrada ? `
-⚠️ EL CLIENTE YA SOLICITÓ UNA PROPUESTA FORMAL O CONTRATÓ UN SERVICIO.
-- NO sigas vendiendo
-- NO insistas con más ofertas
-- Confirma que recibirá la información solicitada
-- Agradece su interés y finaliza amablemente
-- Si pregunta algo más, responde brevemente y cierra la conversación
-` : `
-PROCESO DE VENTA:
-1. Saluda amigablemente y pregunta qué necesita
-2. Identifica su uso actual de internet/TV
-3. Recomienda el plan que mejor se adapte
-4. Si muestra interés, ofrece contratar el servicio
-5. Si dice "contratar" o "me interesa", pide datos de contacto
-6. Si dice "no" o "finalizar", agradece y termina cordialmente
-
-PERSONALIDAD: Amigable, directo, no insistente. Respuestas cortas, sencillas y claras.
-`}
-
-ENLACES:
-- Web: https://conecta2telecomunicaciones.com/
-- Planes: https://conecta2telecomunicaciones.com/planes-hogar
-        `;
-
-        // Agregar historial reciente
+        // Agregar solo las últimas 2 interacciones para reducir tokens
         if (session.salesHistory && session.salesHistory.length > 0) {
-            context += '\n\nHISTORIAL RECIENTE:\n';
+            context += '\nÚLTIMAS INTERACCIONES:\n';
             session.salesHistory.slice(-2).forEach(item => {
-                context += `Cliente: ${item.user}\nAndrea: ${item.ai}\n\n`;
+                // Limitar la longitud de los mensajes para reducir tokens
+                const userMsg = item.user.length > 100 ? item.user.substring(0, 100) + '...' : item.user;
+                const aiMsg = item.ai.length > 100 ? item.ai.substring(0, 100) + '...' : item.ai;
+                context += `Cliente: ${userMsg}\nAndrea: ${aiMsg}\n\n`;
             });
         }
 
@@ -338,23 +334,20 @@ Para continuar con tu contratación, necesito algunos datos:
 ` +
                         `¿Confirmas estos datos? (Responde 'Sí' para confirmar o 'No' para cancelar)`
                     );
-                    break;
-
-                case 'confirm':
+                    break; case 'confirm':
                     if (message.toLowerCase().includes('s') || message.toLowerCase().includes('si')) {
+                        // Guardar datos necesarios antes de crear el ticket
+                        const planName = session.contractData.planName;
+
                         // Crear ticket de alta prioridad
                         await this.createSalesTicket(user, session);
 
-                        // Finalizar proceso
-                        session.contractingPlan = false;
-                        session.contractingStep = undefined;
-
-                        // Enviar mensaje de confirmación
+                        // Enviar mensaje de confirmación usando los datos guardados
                         await this.messageService.sendTextMessage(user.phoneNumber,
                             `✅ **¡Contratación Exitosa!**
 
 ` +
-                            `Hemos registrado tu solicitud para el plan ${session.contractData.planName}.
+                            `Hemos registrado tu solicitud para el plan ${planName}.
 
 ` +
                             `🔍 Un asesor se pondrá en contacto contigo en las próximas 24 horas para coordinar la instalación.
@@ -365,6 +358,16 @@ Para continuar con tu contratación, necesito algunos datos:
 ` +
                             `¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
                         );
+
+                        // Limpiar completamente el flujo de ventas después de todo
+                        session.flowActive = undefined;
+                        session.salesConversationStarted = false;
+                        session.selectedService = undefined;
+                        session.contractingPlan = false;
+                        session.contractingStep = undefined;
+                        session.contractData = undefined;
+
+                        console.log('✅ Flujo de ventas cerrado completamente después de crear el ticket');
                     } else {
                         // Cancelar proceso
                         session.contractingPlan = false;
@@ -459,13 +462,15 @@ Para continuar con tu contratación, necesito algunos datos:
                 });
 
                 console.log('✅ Ticket de ventas creado exitosamente en WispHub');
-
             } catch (error) {
                 console.error('Error al crear ticket en WispHub:', error);
 
                 // Intento alternativo usando el servicio interno
+                // Para ventas, usar un ID de servicio numérico válido en lugar de "nuevo_cliente"
+                const fallbackServiceId = user.customerId || "37"; // Usar ID numérico por defecto
+
                 const ticketData = {
-                    customerId: user.customerId || "nuevo_cliente",
+                    customerId: fallbackServiceId,
                     category: "ventas",
                     description: description.replace(/<\/?[^>]+(>|$)/g, ""), // Eliminar HTML tags
                     priority: 'alta' as const,
@@ -479,9 +484,7 @@ Para continuar con tu contratación, necesito algunos datos:
 
                 await this.ticketService.createTicket(ticketData);
                 console.log('✅ Ticket de ventas creado exitosamente con sistema de respaldo');
-            }
-
-            // Registrar en historial
+            }            // Registrar en historial
             if (!session.salesHistory) {
                 session.salesHistory = [];
             }
@@ -491,6 +494,8 @@ Para continuar con tu contratación, necesito algunos datos:
                 ai: `Ticket de ventas creado para plan ${session.contractData.planName}`,
                 timestamp: new Date()
             });
+
+            console.log('✅ Ticket de ventas creado exitosamente');
 
         } catch (error) {
             console.error('Error creando ticket de ventas:', error);
@@ -541,16 +546,15 @@ Para continuar con tu contratación, necesito algunos datos:
         }
     }    /**
      * Genera mensaje de bienvenida personalizado para ventas
-     */
-    private async getWelcomeSalesMessage(user: User, session: SessionData): Promise<string> {
+     */    private async getWelcomeSalesMessage(user: User, session: SessionData): Promise<string> {
         // Mensaje de bienvenida más directo y conciso
         const welcomeMessage = `¡Hola! 👋 Soy Andrea de Conecta2 Telecomunicaciones.
 
 Tenemos los mejores planes de fibra óptica:
 
 🚀 Internet: desde $40.000/mes (50/20 Mbps)
-📺 TV HD: $40.000/mes (80+ canales)
-🔥 Combos: desde $60.000/mes
+📺 TV HD: $40.000/mes (85+ canales)
+🔥 Combos: desde $60.000/mes (con descuentos hasta $20.000)
 
 ¿Qué tipo de plan buscas? ¿Para gaming, trabajo, familia?`;
 
@@ -605,19 +609,64 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
                 '❌ Lo siento, no pude generar la propuesta. ¿Podrías intentarlo nuevamente?');
             return false;
         }
-    }
-
-    /**
+    }    /**
      * Extrae información del plan mencionado en el historial
      */
     private extractPlanFromHistory(history: Array<{ user: string, ai: string, timestamp?: Date }>): any {
-        // Buscar menciones de planes en el historial
-        const allText = history.map(item => `${item.user} ${item.ai}`).join(' ').toLowerCase();
+        // Si no hay historial, devolver el plan básico por defecto
+        if (!history || history.length === 0) {
+            const defaultPlan = this.internetPlans[0];
+            return {
+                name: `Internet ${defaultPlan.name}`,
+                price: `$${defaultPlan.price.toLocaleString('es-CO')}/mes`,
+                id: defaultPlan.id,
+                speed: defaultPlan.speed
+            };
+        }
 
+        // Primero buscar en la última interacción del usuario (más relevante)
+        const lastInteraction = history[history.length - 1];
+        const lastMessageText = (lastInteraction.user + ' ' + lastInteraction.ai).toLowerCase();
+
+        // Intentar encontrar un plan en la última interacción
+        const planFromLastMessage = this.findPlanInText(lastMessageText);
+        if (planFromLastMessage) {
+            return planFromLastMessage;
+        }
+
+        // Si no se encuentra en la última interacción, buscar en las últimas 3 mensajes
+        const recentText = history.slice(-3).map(item => `${item.user} ${item.ai}`).join(' ').toLowerCase();
+        const planFromRecentMessages = this.findPlanInText(recentText);
+        if (planFromRecentMessages) {
+            return planFromRecentMessages;
+        }
+
+        // Si todavía no encuentra nada, solo entonces buscar en todo el historial
+        const allText = history.map(item => `${item.user} ${item.ai}`).join(' ').toLowerCase();
+        const planFromAllHistory = this.findPlanInText(allText);
+        if (planFromAllHistory) {
+            return planFromAllHistory;
+        }
+
+        // Default - Plan más básico de internet si no se encuentra nada
+        const defaultPlan = this.internetPlans[0];
+        return {
+            name: `Internet ${defaultPlan.name}`,
+            price: `$${defaultPlan.price.toLocaleString('es-CO')}/mes`,
+            id: defaultPlan.id,
+            speed: defaultPlan.speed
+        };
+    }
+
+    /**
+     * Busca un plan específico en un texto dado
+     * Método auxiliar para extractPlanFromHistory
+     */
+    private findPlanInText(text: string): any | null {
         // Planes de internet
         for (const plan of this.internetPlans) {
-            if (allText.includes(plan.name.toLowerCase()) ||
-                allText.includes(plan.speed.toLowerCase())) {
+            if (text.includes(plan.name.toLowerCase()) ||
+                text.includes(plan.speed.toLowerCase())) {
                 return {
                     name: `Internet ${plan.name}`,
                     price: `$${plan.price.toLocaleString('es-CO')}/mes`,
@@ -629,8 +678,8 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
 
         // Combos
         for (const combo of this.comboPlan) {
-            if (allText.includes(combo.name.toLowerCase()) ||
-                allText.includes(combo.description.toLowerCase())) {
+            if (text.includes(combo.name.toLowerCase()) ||
+                text.includes(combo.description.toLowerCase())) {
                 return {
                     name: combo.name,
                     price: `$${combo.comboPrice.toLocaleString('es-CO')}/mes`,
@@ -642,9 +691,9 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
 
         // TV
         for (const tv of this.tvPlans) {
-            if (allText.includes(tv.name.toLowerCase()) ||
-                allText.includes('tv hd') ||
-                allText.includes('televisión')) {
+            if (text.includes(tv.name.toLowerCase()) ||
+                text.includes('tv hd') ||
+                text.includes('televisión')) {
                 return {
                     name: tv.name,
                     price: `$${tv.price.toLocaleString('es-CO')}/mes`,
@@ -654,13 +703,97 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
             }
         }
 
-        // Default - Plan más básico de internet
-        const defaultPlan = this.internetPlans[0];
-        return {
-            name: `Internet ${defaultPlan.name}`,
-            price: `$${defaultPlan.price.toLocaleString('es-CO')}/mes`,
-            id: defaultPlan.id,
-            speed: defaultPlan.speed
-        };
+        // Si no encuentra nada, devuelve null
+        return null;
+    }
+
+    /**
+     * Proporciona respuestas predefinidas para preguntas frecuentes sin usar IA
+     * @param message Mensaje del usuario
+     * @returns Respuesta predefinida o null si no hay coincidencia
+     */
+    private getPredefinedResponse(message: string): string | null {
+        const normalizedMessage = message.toLowerCase().trim();
+
+        // Preguntas sobre precios de planes de internet
+        if (normalizedMessage.includes('precio') || normalizedMessage.includes('costo') || normalizedMessage.includes('valor') || normalizedMessage.includes('cuánto')) {
+            // Planes específicos
+            for (const plan of this.internetPlans) {
+                if (normalizedMessage.includes(plan.name.toLowerCase())) {
+                    return `El plan de Internet ${plan.name} tiene un costo de $${plan.price.toLocaleString('es-CO')} mensuales, con velocidad de ${plan.speed}. ${plan.description} 💯\n\n¿Te gustaría contratar este plan o conocer más detalles?`;
+                }
+            }
+
+            // TV
+            if (normalizedMessage.includes('tv') || normalizedMessage.includes('televisión') || normalizedMessage.includes('television')) {
+                const tvPlan = this.tvPlans[0];
+                return `El plan de ${tvPlan.name} tiene un costo de $${tvPlan.price.toLocaleString('es-CO')} mensuales e incluye ${tvPlan.channels} 📺\n\n¿Te interesa contratar este servicio?`;
+            }
+
+            // Combos
+            for (const combo of this.comboPlan) {
+                if (normalizedMessage.includes(combo.name.toLowerCase()) || normalizedMessage.includes(combo.description.toLowerCase())) {
+                    return `El ${combo.name} (${combo.description}) tiene un costo de $${combo.comboPrice.toLocaleString('es-CO')} mensuales. ¡Un ahorro de $${(combo.originalPrice - combo.comboPrice).toLocaleString('es-CO')} mensuales! 🔥\n\n¿Te gustaría contratar este combo?`;
+                }
+            }
+
+            // Precios en general (si no especificó un plan)
+            return `📊 **Precios de nuestros planes:**\n\n` +
+                `**Internet:**\n` +
+                this.internetPlans.map(p => `• ${p.name}: $${p.price.toLocaleString('es-CO')}/mes (${p.speed})`).join('\n') +
+                `\n\n**TV:**\n• ${this.tvPlans[0].name}: $${this.tvPlans[0].price.toLocaleString('es-CO')}/mes (${this.tvPlans[0].channels})` +
+                `\n\n**Combos (con descuento):**\n` +
+                this.comboPlan.map(c => `• ${c.name}: $${c.comboPrice.toLocaleString('es-CO')}/mes (${c.description})`).join('\n') +
+                `\n\n¿Cuál de estos planes te interesa más? 😊`;
+        }
+
+        // Preguntas sobre cobertura
+        if (normalizedMessage.includes('cobertura') || normalizedMessage.includes('zona') || normalizedMessage.includes('barrio') ||
+            normalizedMessage.includes('disponible') || normalizedMessage.includes('llega')) {
+            return `Actualmente tenemos cobertura en Piendamó y zonas aledañas en el Cauca. Para verificar disponibilidad exacta en tu dirección, necesitaría que me indiques tu ubicación específica.\n\n¿Me podrías proporcionar tu dirección para verificar la cobertura? 🏠`;
+        }
+
+        // Preguntas sobre instalación
+        if (normalizedMessage.includes('instala') || normalizedMessage.includes('demora') || normalizedMessage.includes('tiempo') ||
+            normalizedMessage.includes('cuando') || normalizedMessage.includes('cuándo') || normalizedMessage.includes('cuanto tarda')) {
+            return `La instalación de nuestros servicios se realiza en un plazo de 1 a 3 días hábiles después de la contratación. El proceso de instalación toma aproximadamente 2 horas.\n\n¿Te gustaría agendar una instalación? 🔧`;
+        }
+
+        // Preguntas sobre ventajas/beneficios
+        if (normalizedMessage.includes('ventaja') || normalizedMessage.includes('beneficio') || normalizedMessage.includes('mejor') ||
+            normalizedMessage.includes('diferencia') || normalizedMessage.includes('por qué elegir') || normalizedMessage.includes('por que elegir')) {
+            return `✨ **Ventajas de Conecta2 Telecomunicaciones:**\n\n` +
+                `• **Fibra óptica 100%** - Conexión estable y de alta velocidad\n` +
+                `• **Soporte técnico 24/7** - Siempre disponibles para ayudarte\n` +
+                `• **Sin cláusulas de permanencia** - Libertad total\n` +
+                `• **Instalación rápida** - En 1-3 días hábiles\n` +
+                `• **Precios competitivos** - La mejor relación calidad-precio\n\n` +
+                `¿Qué plan te interesaría contratar? 🚀`;
+        }
+
+        // Si no hay coincidencia, devolver null para usar IA
+        return null;
+    }
+
+    /**
+     * Proporciona una respuesta de fallback cuando falla la IA
+     * Ayuda a reducir costos al no requerir reintentos de IA
+     */
+    private getFallbackResponse(message: string): string {
+        // Verificar si el mensaje contiene preguntas comunes
+        const normalizedMessage = message.toLowerCase().trim();
+
+        if (normalizedMessage.includes('hola') || normalizedMessage.includes('buenas') ||
+            normalizedMessage.length < 10) {
+            return `¡Hola! Soy Andrea de Conecta2 Telecomunicaciones. Estoy aquí para ayudarte con nuestros planes de internet y TV. ¿En qué puedo ayudarte hoy? 😊`;
+        }
+
+        if (normalizedMessage.includes('gracias') || normalizedMessage.includes('ok') ||
+            normalizedMessage.includes('entiendo')) {
+            return `¡De nada! Estoy para servirte. ¿Hay algo más en lo que pueda ayudarte con nuestros planes?`;
+        }
+
+        // Respuesta genérica que invita a elegir un plan
+        return `Gracias por tu mensaje. En Conecta2 Telecomunicaciones tenemos excelentes planes de internet desde $40.000/mes y combos con TV desde $60.000/mes.\n\n¿Te gustaría conocer más detalles sobre algún plan específico? O si prefieres, puedo ayudarte a encontrar el plan ideal según tus necesidades. 🌟`;
     }
 }

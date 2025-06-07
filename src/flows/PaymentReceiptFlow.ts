@@ -5,6 +5,7 @@ import { ImageStorageService, ImageMetadata } from '../services/ImageStorageServ
 import { PaymentValidationService, PaymentValidationResult } from '../services/PaymentValidationService';
 import { TicketService } from '../services/TicketService';
 import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
+import { logMessageStructure, extractMediaId, cleanMediaId } from '../utils/debugUtils';
 
 export class PaymentReceiptFlow implements ConversationFlow {
     name = 'PaymentReceiptFlow';
@@ -18,17 +19,54 @@ export class PaymentReceiptFlow implements ConversationFlow {
         this.imageStorageService = new ImageStorageService();
         this.paymentValidationService = new PaymentValidationService();
         this.ticketService = new TicketService();
-    } async canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
-        // Si es un mensaje de texto sobre comprobantes
-        if (typeof message === 'string') {
-            const extractedCommand = extractMenuCommand(message);
-            return extractedCommand === 'validar_pago' ||
-                isMenuCommand(message, ['comprobante', 'pago', 'transferencia', 'factura',
-                    'comprobante_pago', 'subir comprobante', 'validar pago']);
+    }
+
+    async canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'paymentReceipt') {
+            return true;
         }
 
-        // Si es un mensaje con imagen
-        if (typeof message === 'object' && message.type === 'image') {
+        // Si es un mensaje de texto sobre comprobantes
+        if (typeof message === 'string') {
+            // Mensajes exactos que siempre deben activar este flujo
+            const exactMessages = [
+                'validar pago',
+                'subir comprobante de pago',
+                'Validar Pago',
+                'Subir comprobante de pago',
+                'validar_pago',
+                'comprobante_pago',
+                'Validar Pago\nSubir comprobante de pago',
+                '💳 Validar Pago',
+                '💳 Validar Pago\nSubir comprobante de pago',
+                // Variantes con espacios adicionales
+                '💳 Validar Pago\n\nSubir comprobante de pago',
+                '💳 Validar Pago\r\nSubir comprobante de pago',
+                '💳 Validar Pago\r\n\r\nSubir comprobante de pago'
+            ];
+
+            if (exactMessages.includes(message.trim())) {
+                console.log(`✅ Mensaje exacto detectado para validación de pago: "${message}"`);
+                return true;
+            }
+
+            // Detectar variaciones del comando con normalización
+            const normalizedMessage = message.toLowerCase().trim();
+            if (normalizedMessage.includes('validar') && normalizedMessage.includes('pago')) {
+                console.log(`✅ Comando de validación de pago detectado: "${message}"`);
+                return true;
+            }
+
+            if (normalizedMessage.includes('comprobante') && normalizedMessage.includes('pago')) {
+                console.log(`✅ Comando de comprobante de pago detectado: "${message}"`);
+                return true;
+            }
+        }
+
+        // Si es una imagen y el flujo está esperando comprobantes
+        if (typeof message === 'object' && message.type === 'image' && session.verifyingPayment) {
+            console.log(`✅ Imagen recibida durante verificación de pago para ${user.phoneNumber}`);
             return true;
         }
 
@@ -36,170 +74,324 @@ export class PaymentReceiptFlow implements ConversationFlow {
     }
 
     async handle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
-        try {
-            // Manejar imagen de comprobante
-            if (typeof message === 'object' && message.type === 'image') {
-                return await this.handlePaymentReceiptImage(user, message);
-            }
+        console.log(`PaymentReceiptFlow manejando mensaje para ${user.phoneNumber}`);
 
-            // Manejar mensajes de texto sobre comprobantes
-            if (typeof message === 'string') {
-                return await this.handlePaymentInquiry(user, message);
-            }
+        // Registrar mensaje para depuración
+        await logMessageStructure(message, 'PaymentReceiptFlow.handle');
 
-            return false;
-        } catch (error) {
-            console.error('Error en PaymentReceiptFlow:', error); await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                '❌ Ocurrió un error procesando tu solicitud. Por favor intenta nuevamente.'
-            );
+        // Si es una imagen o documento, procesarla directamente
+        if (typeof message === 'object' && (message.type === 'image' || message.type === 'document')) {
+            console.log(`Procesando imagen o documento para ${user.phoneNumber}`);
+            await this.handlePaymentReceiptImage(user, message, session);
             return true;
         }
-    }
 
-    /**
-     * Maneja imágenes de comprobantes de pago
-     */
-    private async handlePaymentReceiptImage(user: User, message: WhatsAppMessage): Promise<boolean> {
-        try {            // Enviar mensaje de procesamiento
-            await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                '📄 Recibido comprobante de pago. Analizando imagen...\n\nEsto puede tomar unos segundos.'
-            );            // Guardar imagen
-            console.log(`📥 Guardando imagen de comprobante de ${user.phoneNumber}`);
-            const imageMetadata: ImageMetadata | null = await this.imageStorageService.downloadAndSaveImage(
-                message.image!.id,
-                user.phoneNumber,
-                'payment_receipt'
-            );
-
-            if (!imageMetadata) {
-                await this.messageService.sendTextMessage(
-                    user.phoneNumber,
-                    '❌ No pude descargar la imagen. Por favor intenta nuevamente.'
-                );
-                return true;
-            }
-
-            console.log(`✅ Imagen guardada: ${imageMetadata.localPath}`);
-
-            // Validar comprobante con IA
-            console.log(`🤖 Iniciando análisis de IA para comprobante`);
-            const validationResult: PaymentValidationResult = await this.paymentValidationService.validatePaymentReceipt(imageMetadata);
-
-            // Procesar resultado de validación
-            await this.processValidationResult(user, validationResult, imageMetadata);
-
-            return true;
-        } catch (error) {
-            console.error('Error procesando imagen de comprobante:', error); await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                '❌ No pude procesar la imagen del comprobante.\n\n' +
-                'Por favor verifica que:\n' +
-                '• La imagen sea clara y legible\n' +
-                '• Toda la información esté visible\n' +
-                '• El formato sea JPG, PNG o similar\n\n' +
-                'Intenta enviar la imagen nuevamente.'
-            );
-            return true;
-        }
-    }
-
-    /**
-     * Procesa el resultado de la validación y envía respuesta al usuario
-     */
-    private async processValidationResult(
-        user: User,
-        result: PaymentValidationResult,
-        imageMetadata: ImageMetadata
-    ): Promise<void> {
-        if (result.isValid) {
-            // Pago válido - crear ticket de verificación
-            const ticketId = await this.createPaymentVerificationTicket(user, result, imageMetadata); await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                `✅ **COMPROBANTE VÁLIDO**\n\n` +
-                `🎯 **Detalles detectados:**\n` +
-                `💰 Monto: $${result.extractedData.amount?.toLocaleString() || 'No detectado'}\n` +
-                `📅 Fecha: ${result.extractedData.date || 'No detectada'}\n` +
-                `🏦 Banco: ${result.extractedData.bank || 'No detectado'}\n` +
-                `📊 Confianza: ${Math.round(result.confidence * 100)}%\n\n` +
-                `📋 **Ticket creado:** #${ticketId}\n` +
-                `⏱️ Tu pago será verificado en las próximas horas.\n\n` +
-                `¡Gracias por tu pago! 🙏`
-            );
-        } else {
-            // Pago no válido - informar problemas
-            const errorsList = result.errors.join('\n• ');
-            const suggestionsList = result.suggestions.join('\n• '); await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                `❌ **COMPROBANTE NO VÁLIDO**\n\n` +
-                `🚨 **Problemas detectados:**\n• ${errorsList}\n\n` +
-                `💡 **Sugerencias:**\n• ${suggestionsList}\n\n` +
-                `📋 **Cuentas autorizadas:**\n` +
-                `${PaymentValidationService.getValidAccountsInfo()}\n\n` +
-                `Por favor corrige estos problemas y envía un nuevo comprobante.`
-            );
-        }
-    }    /**
-     * Crea un ticket de verificación de pago
-     */
-    private async createPaymentVerificationTicket(
-        user: User,
-        result: PaymentValidationResult,
-        imageMetadata: ImageMetadata
-    ): Promise<string> {
-        const ticketData = {
-            customerId: user.customerId || user.phoneNumber,
-            category: 'facturacion',
-            description: `**SOLICITUD DE VERIFICACIÓN DE COMPROBANTE DE PAGO**\n\n` +
-                `**Cliente:** ${user.phoneNumber}\n\n` +
-                `**Detalles del Comprobante:**\n` +
-                `• Monto: $${result.extractedData.amount?.toLocaleString() || 'No detectado'}\n` +
-                `• Fecha: ${result.extractedData.date || 'No detectada'}\n` +
-                `• Banco: ${result.extractedData.bank || 'No detectado'}\n` +
-                `• Cuenta: ${result.extractedData.accountNumber || 'No detectada'}\n` +
-                `• Referencia: ${result.extractedData.referenceNumber || 'No detectada'}\n` +
-                `• Método: ${result.extractedData.paymentMethod || 'No detectado'}\n\n` +
-                `**Validación IA:**\n` +
-                `• Confianza: ${Math.round(result.confidence * 100)}%\n` +
-                `• Calidad de imagen: ${result.validationDetails.imageQuality}\n\n` +
-                `**Archivo:** ${imageMetadata.originalName}\n` +
-                `**Ruta:** ${imageMetadata.localPath}\n\n` +
-                `**ACCIÓN REQUERIDA:** Verificar manualmente el comprobante de pago y aplicar el pago correspondiente.`,
-            priority: 'media' as const,
-            source: 'whatsapp',
-            metadata: {
-                paymentValidation: result,
-                imageMetadata: imageMetadata,
-                automaticValidation: true
-            }
-        };
-
-        return await this.ticketService.createTicket(ticketData);
-    }
-
-    /**
-     * Maneja consultas de texto sobre comprobantes
-     */
-    private async handlePaymentInquiry(user: User, message: string): Promise<boolean> {
-        const lowerMessage = message.toLowerCase(); if (lowerMessage === 'validar_pago' || lowerMessage === 'comprobante_pago' ||
-            lowerMessage.includes('comprobante') || lowerMessage.includes('pago')) {
-            await this.messageService.sendTextMessage(
-                user.phoneNumber,
-                `💳 **VALIDACIÓN DE COMPROBANTES DE PAGO**\n\n` +
-                `Para verificar tu pago, simplemente envía una **foto clara** de tu comprobante.\n\n` +
-                `📋 **Cuentas autorizadas:**\n` +
-                `${PaymentValidationService.getValidAccountsInfo()}\n\n` +
-                `📸 **Tips para una buena foto:**\n` +
-                `• Asegúrate de que esté bien iluminada\n` +
-                `• Que se vea toda la información claramente\n` +
-                `• Evita reflejos y sombras\n` +
-                `• Formato JPG o PNG\n\n` +
-                `¡Envía tu comprobante ahora! 📤`
-            );
+        // Si es un mensaje de texto, responder con información sobre comprobantes
+        if (typeof message === 'string') {
+            console.log(`Procesando consulta de texto sobre comprobante para ${user.phoneNumber}: "${message}"`);
+            await this.handlePaymentReceiptQuery(user, message, session);
             return true;
         }
 
         return false;
+    }
+
+    private async handlePaymentReceiptQuery(user: User, message: string, session: SessionData): Promise<void> {
+        // Activar el flujo para que las próximas imágenes sean procesadas
+        session.flowActive = 'paymentReceipt';
+        session.verifyingPayment = true;
+        session.lastActivity = new Date();
+
+        // Mensajes que indican solicitud de información sobre pagos
+        const informationMessages = [
+            'validar pago', 'subir comprobante de pago', 'Validar Pago', 'Subir comprobante de pago',
+            'validar_pago', 'comprobante_pago', '💳 Validar Pago'
+        ];
+
+        if (informationMessages.some(msg => message.includes(msg))) {
+            console.log(`Mensaje exacto activó respuesta de comprobante: "${message}"`);
+
+            const responseMessage = `💳 **VALIDACIÓN DE COMPROBANTES DE PAGO**            📄 Para validar tu pago, por favor envía una **FOTO CLARA** de tu comprobante que incluya:
+
+✅ **Información requerida:**
+• Fecha y hora de la transacción
+• Monto pagado
+• Número de referencia o CUS
+• Nombre del banco o entidad
+
+🏦 **Medios de pago aceptados:**
+
+🏛️ **CORRESPONSAL BANCOLOMBIA ó APP**
+• CONVENIO 94375 más TU CODIGO USUARIO
+
+🏦 **BANCOLOMBIA AHORROS**
+• Cuenta: 26100006596
+• NIT: 901707684
+• Conecta2 Telecomunicaciones
+
+💜 **NEQUI**
+• Número: 3242156679
+
+🏦 **DAVIVIENDA AHORROS**
+• Cuenta: 0488403242917
+
+📲 **IMPORTANTE:**
+• La imagen debe verse claramente
+• Incluye toda la información del comprobante
+• Envía solo UNA imagen por comprobante
+• ENVIAR FOTO DEL COMPROBANTE PARA VALIDAR EL PAGO WhatsApp 3242156679
+
+⚠️ **RECONEXION DE $7.000 DESPUES DEL DIA 15**
+💳 **La imagen adjunta es un QR de pago**
+
+¿Tienes tu comprobante listo? ¡Envíalo como foto! 📸`;
+
+            await this.messageService.sendTextMessage(user.phoneNumber, responseMessage);
+            console.log(`Consulta de comprobante procesada exitosamente para ${user.phoneNumber}`);
+            return;
+        }
+
+        // Respuesta por defecto con información sobre el proceso
+        const helpMessage = `💳 **SUBIR COMPROBANTE DE PAGO**
+
+Para validar tu pago:
+
+1️⃣ Toma una foto clara de tu comprobante
+2️⃣ Asegúrate que se vea toda la información
+3️⃣ Envíala aquí mismo
+
+📋 **Debe incluir:**
+• Fecha y hora
+• Monto pagado  
+• Referencia bancaria
+• Nombre del banco
+
+¿Tienes alguna duda? ¡Envía tu comprobante y lo validamos! 📸`;
+
+        await this.messageService.sendTextMessage(user.phoneNumber, helpMessage);
+    }
+
+    private async handlePaymentReceiptImage(user: User, message: WhatsAppMessage, session: SessionData): Promise<void> {
+        try {
+            // Enviar mensaje de procesamiento inmediatamente
+            await this.messageService.sendTextMessage(
+                user.phoneNumber,
+                "📄 Recibido comprobante de pago. Analizando imagen...\n\nEsto puede tomar unos segundos."
+            );
+
+            // Extraer el Media ID de la imagen
+            const mediaId = extractMediaId(message);
+            if (!mediaId) {
+                await this.messageService.sendTextMessage(
+                    user.phoneNumber,
+                    "❌ Error: No se pudo obtener la imagen. Por favor, intenta enviarla nuevamente."
+                );
+                return;
+            } console.log(`📥 Guardando imagen de comprobante de ${user.phoneNumber} con ID: ${mediaId}`);
+
+            // Intentar descargar la imagen con reintentos para manejar Media IDs expirados
+            const imageMetadata = await this.downloadImageWithRetries(user, mediaId);
+
+            // Validar el comprobante de pago usando el servicio de validación
+            const validationResult = await this.paymentValidationService.validatePaymentReceipt(
+                imageMetadata
+            );
+
+            // Procesar resultado de la validación
+            await this.processValidationResult(user, validationResult, session);
+
+        } catch (error) {
+            console.error('Error procesando imagen de comprobante:', error);
+
+            // Manejar diferentes tipos de errores específicos de Media IDs expirados
+            if (error instanceof Error &&
+                (error.message.includes('Object with ID') && error.message.includes('does not exist'))) {
+
+                const errorMessage = `⏰ **MEDIA ID EXPIRADO**
+
+Lo siento, la imagen que enviaste ha expirado en los servidores de WhatsApp.
+
+📱 **Por favor:**
+1. Envía la imagen **nuevamente**
+2. Asegúrate de enviarla inmediatamente después de tomarla
+
+🔄 **¿Por qué sucede esto?**
+• Las imágenes en WhatsApp tienen un tiempo limitado de disponibilidad (5 minutos según la documentación oficial)
+• Esto es por seguridad y privacidad
+
+¡Envía tu comprobante de nuevo! 📸`;
+
+                await this.messageService.sendTextMessage(user.phoneNumber, errorMessage);
+            } else {
+                // Error genérico
+                const errorMessage = `❌ **Error procesando comprobante**
+
+Hubo un problema al procesar tu imagen. Por favor:
+
+1️⃣ Verifica que la imagen sea clara
+2️⃣ Asegúrate que muestre toda la información
+3️⃣ Intenta enviarla nuevamente
+
+Si el problema persiste, contacta a nuestro equipo de soporte.`;
+
+                await this.messageService.sendTextMessage(user.phoneNumber, errorMessage);
+            }
+        }
+    }    /**
+     * Intenta descargar la imagen con reintentos para manejar Media IDs expirados
+     * Implementa las mejores prácticas según la documentación oficial de WhatsApp Business API v23.0
+     */
+    private async downloadImageWithRetries(user: User, mediaId: string, maxRetries: number = 2): Promise<ImageMetadata> {
+        let lastError: Error = new Error('Unknown error');
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                console.log(`📥 Descargando imagen ${mediaId} para usuario ${user.phoneNumber} (intento ${attempt}/${maxRetries})`);
+
+                const imageMetadata = await this.imageStorageService.downloadAndSaveImage(
+                    mediaId,
+                    user.phoneNumber,
+                    'payment_receipt'
+                );
+
+                // Si el servicio retorna null, tratar como error
+                if (!imageMetadata) {
+                    throw new Error('ImageStorageService returned null');
+                }
+
+                console.log(`✅ Imagen descargada exitosamente en el intento ${attempt}`);
+                return imageMetadata;
+
+            } catch (error) {
+                lastError = error as Error;
+                console.error(`❌ Error en intento ${attempt}/${maxRetries}:`, (error as Error).message);
+
+                // Manejar errores específicos de Media ID expirado (400 Bad Request)
+                if ((error as any).response?.status === 400) {
+                    const errorData = (error as any).response.data;
+                    console.log(`📋 Datos de respuesta:`, errorData);
+
+                    // Verificar si es un error de Media ID expirado según la documentación v23.0
+                    const errorMessage = JSON.stringify(errorData).toLowerCase();
+                    if ((errorMessage.includes('object with id') && errorMessage.includes('does not exist')) ||
+                        errorMessage.includes('media not found') ||
+                        errorMessage.includes('invalid media id') ||
+                        errorMessage.includes('missing permissions') ||
+                        errorMessage.includes('unsupported get request')) {
+
+                        console.log(`🔍 Media ID expirado detectado en intento ${attempt}/${maxRetries}`);
+
+                        // No reintentar para Media IDs expirados - lanzar error inmediatamente
+                        console.log(`❌ Media ID definitivamente expirado: ${mediaId}`);
+                        const expiredError = new Error(`Object with ID '${mediaId}' does not exist`);
+                        throw expiredError;
+                    }
+                }
+
+                // Manejar errores 404 (Media no encontrado)
+                if ((error as any).response?.status === 404) {
+                    console.log(`❌ Media ID no encontrado (404): ${mediaId}`);
+                    const notFoundError = new Error(`Media not found: ${mediaId}`);
+                    notFoundError.message = 'Object with ID \'' + mediaId + '\' does not exist';
+                    throw notFoundError;
+                }
+
+                // Si es el último intento para otros errores, lanzar el error
+                if (attempt === maxRetries) {
+                    console.error(`❌ Máximo número de intentos alcanzado (${maxRetries})`);
+                    throw lastError;
+                }
+
+                // Esperar antes del próximo intento para otros errores
+                console.log(`⏰ Esperando antes del intento ${attempt + 1}...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        console.error(`❌ Falló después de ${maxRetries} intentos`);
+        throw lastError;
+    }
+
+    private async processValidationResult(
+        user: User,
+        validationResult: PaymentValidationResult,
+        session: SessionData
+    ): Promise<void> {
+        if (validationResult.isValid) {
+            try {
+                // Crear ticket automáticamente para pago válido
+                const ticketData = {
+                    customerId: user.phoneNumber, // Usando phoneNumber como customerId según la interfaz
+                    category: 'Pago',
+                    priority: 'media' as const,
+                    description: `Comprobante de pago validado - ${validationResult.confidence || 'Verificado'}`,
+                    source: 'whatsapp_bot', metadata: {
+                        paymentReceipt: true,
+                        imageInfo: validationResult.confidence ? `Confianza: ${validationResult.confidence}` : 'Análisis completado',
+                        userId: user.phoneNumber,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+
+                const ticket = await this.ticketService.createTicket(ticketData);
+
+                const successMessage = `✅ **COMPROBANTE VALIDADO EXITOSAMENTE**
+
+🎉 Tu pago ha sido verificado y registrado correctamente.
+
+📊 **Detalles:**
+• Validación: Exitosa
+• Estado: Procesado
+${validationResult.confidence ? `• Confianza: ${validationResult.confidence}` : '• Información detectada correctamente'}
+
+📋 **Ticket Creado:** #${ticket}
+
+⚡ **Próximos pasos:**
+• Tu pago será procesado en las próximas horas
+• Recibirás confirmación una vez aplicado a tu cuenta
+• Puedes consultar el estado con el ticket #${ticket}
+
+¡Gracias por tu pago! 🙏`;
+
+                await this.messageService.sendTextMessage(user.phoneNumber, successMessage);
+
+                // Finalizar el flujo
+                session.flowActive = undefined;
+                session.verifyingPayment = false;
+
+            } catch (ticketError) {
+                console.error('Error creando ticket:', ticketError);
+
+                const partialSuccessMessage = `✅ **COMPROBANTE VALIDADO**
+
+🎉 Tu pago ha sido verificado correctamente.
+
+⚠️ Hubo un problema menor al crear el ticket de seguimiento, pero tu pago está registrado.
+
+Nuestro equipo procesará tu pago manualmente. ¡Gracias! 🙏`;
+
+                await this.messageService.sendTextMessage(user.phoneNumber, partialSuccessMessage);
+                session.flowActive = undefined;
+                session.verifyingPayment = false;
+            }
+
+        } else {
+            // Pago no válido
+            const rejectionMessage = `❌ **COMPROBANTE NO VÁLIDO**
+
+🔍 **Motivo:**
+${validationResult.confidence || 'No se pudo validar el comprobante de pago.'}
+
+📝 **Por favor verifica que tu comprobante incluya:**
+• Fecha y hora de la transacción
+• Monto pagado completo
+• Número de referencia bancaria
+• Información clara y legible
+
+🔄 **¿Necesitas ayuda?**
+Puedes enviar otro comprobante o contactar a nuestro equipo de soporte.`;
+
+            await this.messageService.sendTextMessage(user.phoneNumber, rejectionMessage);
+        }
     }
 }

@@ -31,11 +31,45 @@ export interface WhatsAppMessage {
         sha256: string;
         caption?: string;
     };
+    audio?: {
+        id: string;
+        mime_type: string;
+        sha256: string;
+    };
+    video?: {
+        id: string;
+        mime_type: string;
+        sha256: string;
+        caption?: string;
+    };
     location?: {
         latitude: number;
         longitude: number;
         name?: string;
         address?: string;
+    };
+    // Campo genérico para cualquier tipo de medio
+    media?: {
+        id: string;
+        mime_type?: string;
+        type?: string;
+        caption?: string;
+    };
+}
+
+// Interfaz para eventos de handover de Meta API
+export interface WhatsAppHandoverEvent {
+    messaging_product: string;
+    recipient: {
+        display_phone_number: string;
+        phone_number_id: string;
+    };
+    sender: {
+        phone_number: string;
+    };
+    timestamp: string;
+    control_passed: {
+        metadata?: string;
     };
 }
 
@@ -58,6 +92,8 @@ export interface WhatsAppWebhookValue {
         timestamp: string;
         recipient_id: string;
     }>;
+    // Para eventos de handover
+    messaging_handovers?: WhatsAppHandoverEvent[];
 }
 
 export interface SessionData {
@@ -90,10 +126,8 @@ export interface SessionData {
     diagnosticTaskId?: string;
 
     // Flags para selección de servicio
-    awaitingServiceSelection?: boolean;
-
-    // Datos del paso actual
-    step?: 'category' | 'description' | 'confirmation' | 'current_password' | 'new_password' | 'verify_password' | 'confirm_password' | 'service_selection' | 'payment_verification' | 'plan_type_selection' | 'internet_plan_selection' | 'tv_plan_selection';
+    awaitingServiceSelection?: boolean;    // Datos del paso actual
+    step?: 'category' | 'description' | 'confirmation' | 'current_password' | 'new_password' | 'verify_password' | 'confirm_password' | 'service_selection' | 'payment_verification' | 'plan_type_selection' | 'internet_plan_selection' | 'tv_plan_selection' | 'self_help_response' | 'self_help_step2' | 'problem_persists';
     category?: string;
     description?: string;
     newPassword?: string;
@@ -112,6 +146,12 @@ export interface SessionData {
         category?: string;
         urgency?: string;
     };
+
+    // Datos de handover a agente
+    agentHandoverInProgress?: boolean;
+    handoverStartTime?: Date;
+    handoverTicketId?: string;
+    assignedAgentId?: string;
 
     // Historial de conversación de ventas
     salesHistory?: Array<{

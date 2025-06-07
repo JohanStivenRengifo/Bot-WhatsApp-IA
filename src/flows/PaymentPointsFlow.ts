@@ -16,14 +16,20 @@ export class PaymentPointsFlow implements ConversationFlow {
     constructor(messageService: MessageService) {
         this.messageService = messageService;
     } async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'paymentPoints') {
+            return true;
+        }
+
         const extractedCommand = extractMenuCommand(message);
         return extractedCommand === 'puntos_pago' ||
             isMenuCommand(message, ['puntos de pago', 'lugares de pago', 'ubicaciones para pagar']);
-    }
-
-    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
+    } async handle(user: User, message: string, session: SessionData): Promise<boolean> {
         // Mostrar información de puntos de pago
         await this.showPaymentInfo(user.phoneNumber);
+
+        // Limpiar estado de sesión después de procesar
+        session.flowActive = '';
 
         // Indicar que se ha manejado el mensaje
         return true;

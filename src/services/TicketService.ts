@@ -30,12 +30,18 @@ export class TicketService {
             // Validar que tenemos un ID de cliente válido
             if (!ticketData.customerId) {
                 throw new Error('ID de cliente requerido para crear ticket');
-            }
-
-            // Convertir customerId a string si es necesario
+            }            // Convertir customerId a string si es necesario y validar que sea numérico
             const customerIdString = ticketData.customerId.toString().trim();
             if (customerIdString === '') {
                 throw new Error('ID de cliente requerido para crear ticket');
+            }
+
+            // Validar que el customerId sea numérico para WispHub
+            // Si no es numérico, usar un ID por defecto válido
+            let serviceId = customerIdString;
+            if (!/^\d+$/.test(customerIdString)) {
+                console.log(`⚠️ CustomerId no numérico detectado: "${customerIdString}". Usando ID por defecto: 37`);
+                serviceId = "37"; // ID de servicio por defecto válido
             }
 
             // Preparar datos para la API de WispHub según documentación oficial
@@ -65,9 +71,9 @@ export class TicketService {
             const priorityValue = priorityMapping[ticketData.priority || 'media'];            // Preparar FormData según documentación de WispHub (multipart/form-data)
             const FormData = require('form-data');
             const formData = new FormData();            // Campos REQUERIDOS según documentación
-            formData.append('servicio', customerIdString); // ID del servicio/cliente
+            formData.append('servicio', serviceId); // ID del servicio/cliente (validado como numérico)
             formData.append('asunto', subject); // Asunto del ticket
-            formData.append('asuntos_default', subject); // Debe ser igual al asunto            // Campo de técnico - REQUERIDO por WispHub API
+            formData.append('asuntos_default', subject); // Debe ser igual al asunto// Campo de técnico - REQUERIDO por WispHub API
             // Intentar usar ID configurado, sino usar ID por defecto válido
             let technicianId = config.wisphub.defaultTechnicianId?.trim();
             if (!technicianId || technicianId === '') {
@@ -89,7 +95,7 @@ export class TicketService {
             formData.append('fecha_inicio', formattedDate);
             formData.append('fecha_final', formattedDate);
             formData.append('origen_reporte', 'redes_sociales'); // Corregido: redes_sociales (no whatsapp)            console.log('📋 Datos del ticket a enviar como FormData');
-            console.log('   - servicio:', customerIdString);
+            console.log('   - servicio:', serviceId);
             console.log('   - asunto:', subject);
             console.log('   - asuntos_default:', subject);
             console.log('   - tecnico:', technicianId);

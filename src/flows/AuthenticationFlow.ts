@@ -125,10 +125,8 @@ export class AuthenticationFlow extends BaseConversationFlow {
             document: customerData.document,
             status: customerData.status,
             isInactive: true
-        }));
-
-        // Mostrar opciones limitadas
-        await this.messageService.sendLimitedOptionsMenu(user.phoneNumber);
+        }));        // Mostrar menú específico para servicio suspendido (solo contactar agente)
+        await this.messageService.sendSuspendedServiceMenu(user.phoneNumber);
     }
 
     /**

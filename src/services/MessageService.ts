@@ -184,10 +184,14 @@ export class MessageService {
                                     description: 'Subir comprobante de pago'
                                 }
                             ]
-                        },
-                        {
+                        }, {
                             title: 'General',
                             rows: [
+                                {
+                                    id: 'hablar_agente',
+                                    title: '👨‍💼 Hablar con Agente',
+                                    description: 'Contactar soporte humano'
+                                },
                                 {
                                     id: 'cerrar_sesion',
                                     title: '👋 Cerrar Sesión',
@@ -306,6 +310,41 @@ export class MessageService {
         };
 
         await this.sendMessage(limitedMenuMessage);
+    }
+
+    async sendSuspendedServiceMenu(phoneNumber: string): Promise<void> {
+        const suspendedMenuMessage = {
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'list',
+                header: {
+                    type: 'text',
+                    text: '⚠️ Servicio Suspendido'
+                },
+                body: {
+                    text: 'Tu servicio está actualmente suspendido. Para resolverlo necesitas contactar a nuestro equipo:'
+                },
+                action: {
+                    button: 'Ver opciones',
+                    sections: [
+                        {
+                            title: 'Atención Personalizada',
+                            rows: [
+                                {
+                                    id: 'hablar_agente',
+                                    title: '👨‍💼 Contactar Soporte',
+                                    description: 'Hablar con un agente para reactivar servicio'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        };
+
+        await this.sendMessage(suspendedMenuMessage);
     }
 
     async sendErrorMessage(phoneNumber: string, text: string): Promise<void> {

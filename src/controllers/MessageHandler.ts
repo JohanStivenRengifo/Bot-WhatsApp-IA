@@ -12,9 +12,7 @@ import { SessionManager } from '../services/SessionManager';
 import {
     ConversationFlowManager,
     AuthenticationFlow,
-    PrivacyPolicyFlow,
-    InitialSelectionFlow,
-    ClientMenuFlow,
+    PrivacyPolicyFlow, InitialSelectionFlow, ClientMenuFlow,
     SalesFlow,
     InvoicesFlow,
     TicketCreationFlow,
@@ -24,7 +22,9 @@ import {
     PaymentPointsFlow,
     PaymentReceiptFlow,
     DebtInquiryFlow,
-    LogoutFlow
+    LogoutFlow,
+    AgentHandoverFlow,
+    SuspendedServiceFlow
 } from '../flows';
 import { isValidPassword } from '../utils';
 import { extractMenuCommand } from '../utils/messageUtils';
@@ -97,22 +97,57 @@ export class MessageHandler {
         let messageText = '';
         if (message.type === 'text' && message.text) {
             messageText = message.text.body;
+
+            // Verificar si es un mensaje de validación de pago en formato especial
+            if (messageText.includes('💳 Validar Pago') &&
+                (messageText.includes('Subir comprobante de pago') ||
+                    messageText.includes('subir comprobante'))) {
+                console.log(`Detectado mensaje de texto con formato de validación de pago: "${messageText}"`);
+                // Normalizar para garantizar que se reconozca correctamente
+                messageText = 'validar_pago';
+            }
         } else if (message.type === 'interactive') {
             if (message.interactive?.button_reply) {
                 // Guardar el mensaje completo, incluido el título
                 messageText = message.interactive.button_reply.title;
-            } else if (message.interactive?.list_reply) {
-                // Guardar el mensaje completo, incluido el título y descripción
-                messageText = message.interactive.list_reply.title;
-                if (message.interactive.list_reply.description) {
-                    messageText += '\n' + message.interactive.list_reply.description;
+                const buttonId = message.interactive.button_reply.id;
+                console.log(`Botón seleccionado: ${messageText}, ID: ${buttonId}`);
+
+                // Para botones relacionados con pagos, priorizar el ID
+                if (buttonId && (buttonId === 'validar_pago' || buttonId.includes('pago') || buttonId.includes('comprobante'))) {
+                    console.log(`Detectado botón de validación de pago con ID: ${buttonId}`);
+                    messageText = 'validar_pago';
+                }
+            } else if (message.interactive?.list_reply) {                // Capturar el ID explícitamente - esto es crucial para la correcta redirección
+                const listId = message.interactive.list_reply.id;
+                console.log(`Lista seleccionada - ID: ${listId}, Título: ${message.interactive.list_reply.title}`);
+
+                // Para opciones relacionadas con pagos, priorizar el ID
+                if (listId === 'validar_pago' ||
+                    listId === 'comprobante_pago' ||
+                    listId.includes('pago') ||
+                    listId.includes('comprobante')) {
+                    console.log(`Detectada selección de validación de pago con ID: ${listId}`);
+                    messageText = 'validar_pago';
+                } else {
+                    // Para otros casos, usar el título como respaldo
+                    messageText = message.interactive.list_reply.title;
+                    // Opcionalmente agregar la descripción
+                    if (message.interactive.list_reply.description) {
+                        messageText += '\n' + message.interactive.list_reply.description;
+                    }
                 }
             }
         }
 
         // Process message based on user state
-        await this.handleUserMessage(user, messageText);
-    } private async handleUserMessage(user: User, messageText: string): Promise<void> {
+        // For images and other media, pass the full WhatsApp message object
+        if (message.type === 'image' || message.type === 'document' || message.type === 'audio' || message.type === 'video') {
+            await this.handleUserMessage(user, message);
+        } else {
+            await this.handleUserMessage(user, messageText);
+        }
+    } private async handleUserMessage(user: User, message: string | WhatsAppMessage): Promise<void> {
         try {
             // Obtener o crear una sesión para este usuario
             let session = this.userSessions.get(user.phoneNumber);
@@ -138,8 +173,10 @@ export class MessageHandler {
 
             // Actualizar última actividad
             user.lastActivity = new Date();
-            this.users.set(user.phoneNumber, user);            // Delegar TODA la lógica al gestor de flujos
-            const handled = await this.flowManager.processMessage(user, messageText, session);
+            this.users.set(user.phoneNumber, user);
+
+            // Delegar TODA la lógica al gestor de flujos
+            const handled = await this.flowManager.processMessage(user, message, session);
 
             // Si ningún flujo manejó el mensaje, mostrar mensaje de ayuda simple
             if (!handled) {
@@ -214,11 +251,19 @@ export class MessageHandler {
         // Registrar el flujo de comprobantes de pago
         this.flowManager.registerFlow(
             new PaymentReceiptFlow()
-        );
-
-        // Registrar el flujo de cierre de sesión
+        );        // Registrar el flujo de cierre de sesión
         this.flowManager.registerFlow(
             new LogoutFlow(this.messageService, this.securityService)
+        );
+
+        // Registrar el flujo de handover a agente humano
+        this.flowManager.registerFlow(
+            new AgentHandoverFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        // Registrar el flujo para servicios suspendidos
+        this.flowManager.registerFlow(
+            new SuspendedServiceFlow(this.messageService, this.securityService)
         );
     }
 }

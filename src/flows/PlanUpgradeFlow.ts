@@ -21,18 +21,14 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
         { id: 'plan_70', name: '70 Mbps', speed: '300/150 Mbps', price: 68000, description: 'Velocidad premium para empresas' },
         { id: 'plan_80', name: '80 Mbps', speed: '500/250 Mbps', price: 75000, description: 'Ultra velocidad para uso intensivo' },
         { id: 'plan_100', name: '100 Mbps', speed: '1000/500 Mbps', price: 80000, description: 'Máxima velocidad para hogares' }
-    ];
-
-    // Planes de TV disponibles - configuración estática para autonomía
+    ];    // Planes de TV disponibles - configuración estática para autonomía
     private readonly tvPlans = [
-        { id: 'tv_hd', name: 'TV Completo', channels: '80+ canales HD', price: 4000, description: '+85 Canales en HD' }
-    ];
-
-    // Combos disponibles con descuentos especiales
+        { id: 'tv_hd', name: 'TV Completo', channels: '85+ canales HD', price: 40000, description: '+85 Canales en HD' }
+    ];    // Combos disponibles con descuentos especiales
     private readonly comboPlan = [
-        { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 85000, comboPrice: 60000, discount: 10000 },
-        { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 135000, comboPrice: 70000, discount: 15000 },
-        { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 195000, comboPrice: 100000, discount: 15000 }
+        { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000, discount: 20000 },
+        { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 90000, comboPrice: 70000, discount: 20000 },
+        { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 120000, comboPrice: 100000, discount: 20000 }
     ];
 
     constructor(
@@ -48,6 +44,11 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
      * Verifica si este flujo debe manejar el mensaje actual
      */
     async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Si el flujo ya está activo (activado por ClientMenuFlow)
+        if (session.flowActive === 'planUpgrade') {
+            return user.authenticated;
+        }
+
         // Este flujo maneja únicamente mejoras de plan autónomas
         const extractedCommand = extractMenuCommand(message); return (
             user.authenticated &&
@@ -187,19 +188,32 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
      * Maneja la selección del tipo de plan de forma inteligente
      */
     private async handlePlanTypeSelection(user: User, message: string, session: SessionData): Promise<boolean> {
+        // Normalizar el mensaje para reconocer tanto IDs como texto
+        let selectedOption = message;
+
+        // Mapear texto alternativo a IDs válidos
+        const messageText = message.toLowerCase().trim();
+        if (messageText.includes('internet') || messageText.includes('mejorar') || messageText.includes('🚀')) {
+            selectedOption = 'upgrade_internet';
+        } else if (messageText.includes('tv') || messageText.includes('televisión') || messageText.includes('📺')) {
+            selectedOption = 'add_tv';
+        } else if (messageText.includes('combo') || messageText.includes('📦')) {
+            selectedOption = 'combo_plan';
+        }
+
         const validSelections = ['upgrade_internet', 'add_tv', 'combo_plan'];
 
-        if (!validSelections.includes(message)) {
+        if (!validSelections.includes(selectedOption)) {
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '❌ Opción no válida. Por favor, selecciona una opción del menú anterior.');
             return true;
         }
 
         // Guardar la selección en la sesión
-        session.planType = message;
+        session.planType = selectedOption;
 
         // Redirigir según el tipo seleccionado
-        switch (message) {
+        switch (selectedOption) {
             case 'upgrade_internet':
                 return await this.showInternetUpgradeOptions(user, session);
             case 'add_tv':
@@ -211,7 +225,7 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
                     '❌ Selección no reconocida. Iniciando proceso nuevamente...');
                 return await this.initializePlanUpgrade(user, session);
         }
-    }    /**
+    }/**
      * Muestra opciones de mejora de internet usando los planes configurados
      */
     private async showInternetUpgradeOptions(user: User, session: SessionData): Promise<boolean> {
@@ -343,11 +357,10 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
 
         // Crear lista interactiva con combos disponibles
         const sections = [{
-            title: 'Combos Disponibles',
-            rows: this.comboPlan.map(combo => ({
+            title: 'Combos Disponibles', rows: this.comboPlan.map(combo => ({
                 id: combo.id,
                 title: `📦 ${combo.name}`,
-                description: `${combo.description} - $${combo.comboPrice.toLocaleString()}/mes (Ahorras $${combo.discount.toLocaleString()})`
+                description: `${combo.description} - $${combo.comboPrice.toLocaleString()}/mes${combo.discount < 0 ? '' : ` (Ahorras $${combo.discount.toLocaleString()})`}`
             }))
         }];
 
@@ -399,7 +412,9 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
                     name: selectedCombo.name,
                     speed: selectedCombo.description,
                     price: selectedCombo.comboPrice,
-                    description: `Ahorro de $${selectedCombo.discount.toLocaleString()} vs planes separados`
+                    description: selectedCombo.discount < 0 ?
+                        `Incluye servicios adicionales por $${Math.abs(selectedCombo.discount).toLocaleString()} extra` :
+                        `Ahorro de $${selectedCombo.discount.toLocaleString()} vs planes separados`
                 };
                 planType = 'combo';
             }
@@ -678,9 +693,7 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
                 '• Soporte técnico durante el proceso\n' +
                 '• Garantía de velocidad desde el primer día\n\n' + '¡Gracias por confiar en Conecta2 Telecomunicaciones! 🌟');
         }
-    }
-
-    /**
+    }    /**
      * Resetea el estado de sesión de mejora de plan
      */
     private resetPlanUpgradeSession(session: SessionData): void {
@@ -690,5 +703,6 @@ export class PlanUpgradeFlow extends BaseConversationFlow {
         session.selectedPlanId = undefined;
         session.selectedTVPlanId = undefined;
         session.step = undefined;
+        session.flowActive = ''; // Limpiar estado de flujo activo
     }
 }
