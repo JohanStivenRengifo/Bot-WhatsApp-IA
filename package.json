@@ -15,7 +15,9 @@
     "sync-invoices": "node scripts/sync-invoices.js",
     "sync-invoices:force": "rm -f invoices_cache.json && node scripts/sync-invoices.js",
     "db:setup": "node scripts/setup-database.js",
-    "db:migrate": "node scripts/migrate-database.js"
+    "db:migrate": "node scripts/migrate-database.js",
+    "test:wisphub": "node scripts/test-wisphub-connection.js",
+    "diagnose": "node scripts/test-wisphub-connection.js"
   },
   "repository": {
     "type": "git",

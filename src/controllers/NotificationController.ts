@@ -60,11 +60,11 @@ export class NotificationController {
         } catch (error) {
             console.error('Check overdue invoices error:', error);
         }
-    }
-
-    private async checkServiceOutages(): Promise<void> {
+    } private async checkServiceOutages(): Promise<void> {
         try {
+            console.log('📊 Comprobando interrupciones de servicio...');
             const outages = await this.customerService.getServiceOutages();
+            console.log(`✅ ${outages.length} interrupciones de servicio encontradas`);
 
             for (const outage of outages) {
                 const affectedUsers = await this.customerService.getAffectedUsers(outage.area);

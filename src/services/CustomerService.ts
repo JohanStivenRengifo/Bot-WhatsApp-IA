@@ -438,17 +438,28 @@ export class CustomerService {    /**
             console.error('Update password error:', error);
             return false;
         }
-    }
-
-    async getServiceOutages(): Promise<any[]> {
+    } async getServiceOutages(): Promise<any[]> {
         try {
-            const response = await axios.get(`${config.wisphub.baseUrl}mantenimientos`, {
+            // Corrigiendo la URL: es posible que el endpoint haya cambiado a esta ruta más común
+            const response = await axios.get(`${config.wisphub.baseUrl}servicios/mantenimientos`, {
                 headers: { 'Authorization': config.wisphub.apiKey }
             });
 
             return response.data.results || [];
         } catch (error) {
             console.error('Get service outages error:', error);
+
+            // Importamos la utilidad de registro de errores
+            const { logIntegrationError } = require('../utils/debugUtils');
+
+            // Registramos el error con detalles para diagnóstico
+            logIntegrationError(
+                'WispHub',
+                `${config.wisphub.baseUrl}servicios/mantenimientos`,
+                error
+            );
+
+            // En caso de error, devolver un array vacío en lugar de fallar por completo
             return [];
         }
     }

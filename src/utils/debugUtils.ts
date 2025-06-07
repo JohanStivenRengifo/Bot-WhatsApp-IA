@@ -3,18 +3,27 @@ import path from 'path';
 import { WhatsAppMessage } from '../interfaces';
 
 /**
+ * Asegura que el directorio de logs exista
+ * @returns Path al directorio de logs
+ */
+function ensureLogDirectory(): string {
+    const logDir = path.join(process.cwd(), 'logs');
+
+    // Crear directorio si no existe
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    return logDir;
+}
+
+/**
  * Utilidad para depurar mensajes de WhatsApp
  * Guarda los mensajes en un archivo de log para análisis posterior
  */
 export function logMessageStructure(message: WhatsAppMessage | any, source: string): void {
     try {
-        const logDir = path.join(process.cwd(), 'logs');
-
-        // Crear directorio si no existe
-        if (!fs.existsSync(logDir)) {
-            fs.mkdirSync(logDir, { recursive: true });
-        }
-
+        const logDir = ensureLogDirectory();
         const logFile = path.join(logDir, 'message-debug.log');
         const timestamp = new Date().toISOString();
 
@@ -35,11 +44,54 @@ export function logMessageStructure(message: WhatsAppMessage | any, source: stri
             `\n------- DEBUG ${timestamp} -------\n` +
             JSON.stringify(logData, null, 2) +
             '\n--------------------------------\n'
-        );
-
-        console.log(`[DEBUG] Mensaje registrado en ${logFile} desde ${source}`);
+        ); console.log(`[DEBUG] Mensaje registrado en ${logFile} desde ${source}`);
     } catch (error) {
         console.error('Error al registrar mensaje para depuración:', error);
+    }
+}
+
+/**
+ * Registra errores de integración con servicios externos
+ * @param serviceName Nombre del servicio (ej: 'WispHub', 'Meta', etc)
+ * @param endpoint Endpoint que causó el error
+ * @param error Error original
+ */
+export function logIntegrationError(serviceName: string, endpoint: string, error: any): void {
+    try {
+        const logDir = ensureLogDirectory();
+        const logFile = path.join(logDir, 'integration-errors.log');
+        const timestamp = new Date().toISOString();
+
+        let errorDetails: string;
+        if (error.response) {
+            // Error de respuesta del servidor
+            errorDetails = JSON.stringify({
+                status: error.response.status,
+                statusText: error.response.statusText,
+                data: error.response.data,
+                headers: error.response.headers
+            }, null, 2);
+        } else if (error.request) {
+            // No se recibió respuesta
+            errorDetails = `No se recibió respuesta del servidor: ${error.request}`;
+        } else {
+            // Error en la configuración de la solicitud
+            errorDetails = error.message || JSON.stringify(error);
+        }
+
+        const logEntry = `
+========== ERROR DE INTEGRACIÓN (${timestamp}) ==========
+Servicio: ${serviceName}
+Endpoint: ${endpoint}
+Detalles:
+${errorDetails}
+========================================================
+`;
+
+        fs.appendFileSync(logFile, logEntry);
+        console.error(`[ERROR] Error de integración con ${serviceName}. Detalles guardados en ${logFile}`);
+    } catch (logError) {
+        console.error('Error al registrar error de integración:', logError);
     }
 }
 
