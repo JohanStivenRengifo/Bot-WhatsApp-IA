@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: whatsapp_bot_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-whatsapp_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-bot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot_password}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: whatsapp_bot_redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # MongoDB (for existing data)
+  mongodb:
+    image: mongo:7
+    container_name: whatsapp_bot_mongo
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+
+  # pgAdmin (for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: whatsapp_bot_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-admin123}
+    ports:
+      - '8080:80'
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongodb_data:
+  pgadmin_data:
