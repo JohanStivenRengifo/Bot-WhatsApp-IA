@@ -48,9 +48,22 @@ export class SalesFlow extends BaseConversationFlow {
         this.apiUrl = config.wisphub.baseUrl + '/api/tickets/' || 'https://api.wisphub.app/api/tickets/';
     }/**
      * Verifica si este flujo debe manejar el mensaje actual
-     */
-    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         const extractedCommand = extractMenuCommand(message);
+
+        // Si acabamos de completar una contratación (últimos 2 minutos), manejar mensajes de cortesía
+        if ((session as any).contractCompletedAt) {
+            const timeSinceCompletion = Date.now() - (session as any).contractCompletedAt.getTime();
+            if (timeSinceCompletion < 120000) { // 2 minutos
+                const courtesyMessages = ['gracias', 'thank', 'ok', 'perfecto', 'excelente', 'muy bien', 'genial'];
+                if (courtesyMessages.some(word => message.toLowerCase().includes(word))) {
+                    return true;
+                }
+            } else {
+                // Limpiar el estado después de 2 minutos
+                delete (session as any).contractCompletedAt;
+            }
+        }
 
         // Si estamos en proceso de contratación, este flujo debe manejar el mensaje
         if (session.contractingPlan === true) {
@@ -85,9 +98,32 @@ export class SalesFlow extends BaseConversationFlow {
         );
     }    /**
      * Maneja el mensaje del usuario
-     */
-    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
         try {
+            // Manejar mensajes de cortesía después de contratación exitosa
+            if ((session as any).contractCompletedAt) {
+                const timeSinceCompletion = Date.now() - (session as any).contractCompletedAt.getTime();
+                if (timeSinceCompletion < 120000) { // 2 minutos
+                    const courtesyMessages = ['gracias', 'thank', 'ok', 'perfecto', 'excelente', 'muy bien', 'genial'];
+                    if (courtesyMessages.some(word => message.toLowerCase().includes(word))) {
+                        await this.messageService.sendTextMessage(user.phoneNumber,
+                            `¡De nada! Fue un placer ayudarte con tu contratación. 😊\n\nSi necesitas algo más en el futuro, escribe "menu" para ver todas las opciones disponibles.\n\n¡Bienvenido a la familia Conecta2! 🎉`
+                        );
+
+                        // Limpiar completamente la sesión después de responder
+                        delete (session as any).contractCompletedAt;
+                        session.flowActive = undefined;
+                        session.salesConversationStarted = false;
+                        session.selectedService = undefined;
+
+                        return true;
+                    }
+                } else {
+                    // Limpiar el estado después de 2 minutos
+                    delete (session as any).contractCompletedAt;
+                }
+            }
+
             // Inicializar historial de ventas si no existe
             if (!session.salesHistory) {
                 session.salesHistory = [];
@@ -341,9 +377,7 @@ Para continuar con tu contratación, necesito algunos datos:
                         const planName = session.contractData.planName;
 
                         // Crear ticket de alta prioridad
-                        await this.createSalesTicket(user, session);
-
-                        // Enviar mensaje de confirmación usando los datos guardados
+                        await this.createSalesTicket(user, session);                        // Enviar mensaje de confirmación usando los datos guardados
                         await this.messageService.sendTextMessage(user.phoneNumber,
                             `✅ **¡Contratación Exitosa!**
 
@@ -358,15 +392,25 @@ Para continuar con tu contratación, necesito algunos datos:
 
 ` +
                             `¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
-                        );
-
-                        // Limpiar completamente el flujo de ventas después de todo
+                        );                        // Limpiar completamente el flujo de ventas después de todo
                         session.flowActive = undefined;
                         session.salesConversationStarted = false;
                         session.selectedService = undefined;
                         session.contractingPlan = false;
                         session.contractingStep = undefined;
                         session.contractData = undefined;
+                        session.salesHistory = [];
+                        session.step = undefined;
+                        session.awaitingServiceSelection = false;
+                        // Agregar estado temporal para manejar mensajes de cortesía
+                        (session as any).contractCompletedAt = new Date();
+
+                        // Limpiar cualquier otro flag activo
+                        session.changingPassword = false;
+                        session.creatingTicket = false;
+                        session.consultingInvoices = false;
+                        session.upgradingPlan = false;
+                        session.verifyingPayment = false;
 
                         console.log('✅ Flujo de ventas cerrado completamente después de crear el ticket');
                     } else {
