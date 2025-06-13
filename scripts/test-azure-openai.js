@@ -15,21 +15,11 @@ async function testAzureOpenAI() {
         const response1 = await aiService.sendMessage('Hola, ¿cómo estás?', 'Eres un asistente amigable');
         console.log('Respuesta:', response1.success ? response1.message : response1.error);
         console.log('Modelo usado:', response1.modelUsed);
-        console.log('---\n');        // Test 2: Respuesta de ventas
+        console.log('---\n');
+
+        // Test 2: Respuesta de ventas
         console.log('📊 Test 2: Respuesta de ventas');
-        const plansData = {
-            internetPlans: [
-                { id: 'plan_50', name: '50 Mbps', speed: '100/50 Mbps', price: 50000, description: 'Perfecto para familias y trabajo remoto' }
-            ],
-            tvPlans: [
-                { id: 'tv_hd', name: 'TV Completo', channels: '85+ canales HD', price: 40000, description: '+85 Canales en HD' }
-            ],
-            comboPlan: [
-                { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000, discount: 20000 }
-            ]
-        };
-        const context = 'Primera interacción del cliente';
-        const response2 = await aiService.getSalesResponse('¿Qué planes de internet tienen?', plansData, context);
+        const response2 = await aiService.getSalesResponse('¿Qué planes de internet tienen?', {});
         console.log('Respuesta:', response2.success ? response2.message.substring(0, 200) + '...' : response2.error);
         console.log('Modelo usado:', response2.modelUsed);
         console.log('---\n');
