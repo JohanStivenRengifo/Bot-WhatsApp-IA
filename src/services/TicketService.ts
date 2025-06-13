@@ -46,9 +46,7 @@ export class TicketService {
 
             // Preparar datos para la API de WispHub según documentación oficial
             const now = new Date();
-            const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-            // Mapear categoría a asuntos válidos de WispHub (EXACTAMENTE como aparecen en la documentación)
+            const formattedDate = `${now.getDate().toString().padStart(2, '0')}/${(now.getMonth() + 1).toString().padStart(2, '0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;            // Mapear categoría a asuntos válidos de WispHub (EXACTAMENTE como aparecen en la documentación)
             const validSubjects: { [key: string]: string } = {
                 'password_change': 'Cambio de Contraseña en Router Wifi',
                 'password_recovery': 'Cambio de Contraseña en Router Wifi',
@@ -57,7 +55,11 @@ export class TicketService {
                 'connection_issues': 'Internet Intermitente',
                 'router_problem': 'No Responde el Router Wifi',
                 'antenna_problem': 'No Responde la Antena',
-                'general': 'Internet Lento' // Fallback por defecto
+                'ventas': 'Otro Asunto', // Para tickets de ventas/contratación
+                'cotizacion': 'Otro Asunto', // Para tickets de cotización
+                'instalacion': 'Otro Asunto', // Para tickets de instalación
+                'consulta': 'Otro Asunto', // Para tickets de consulta
+                'general': 'Otro Asunto' // Fallback por defecto cambiado de "Internet Lento" a "Otro Asunto"
             };
 
             const subject = validSubjects[ticketData.category || 'general'] || validSubjects.general;
@@ -83,13 +85,14 @@ export class TicketService {
             } else {
                 console.log('📋 Usando técnico configurado:', technicianId);
             }
-            formData.append('tecnico', technicianId);
-
-            formData.append('descripcion', `<p>${ticketData.description}</p>`); // Descripción en HTML
+            formData.append('tecnico', technicianId); formData.append('descripcion', `<p>${ticketData.description}</p>`); // Descripción en HTML
             formData.append('estado', '1'); // 1=Nuevo
             formData.append('prioridad', priorityValue); // Prioridad
-            formData.append('departamento', 'Soporte Técnico'); // Departamento
-            formData.append('departamentos_default', 'Soporte Técnico'); // Debe ser igual al departamento
+
+            // Determinar departamento según la categoría
+            const department = (ticketData.category === 'ventas' || ticketData.category === 'cotizacion' || ticketData.category === 'instalacion') ? 'Ventas' : 'Soporte Técnico';
+            formData.append('departamento', department); // Departamento
+            formData.append('departamentos_default', department); // Debe ser igual al departamento
 
             // Campos OPCIONALES
             formData.append('fecha_inicio', formattedDate);

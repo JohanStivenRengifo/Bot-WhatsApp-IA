@@ -17,6 +17,7 @@
     "db:setup": "node scripts/setup-database.js",
     "db:migrate": "node scripts/migrate-database.js",
     "test:wisphub": "node scripts/test-wisphub-connection.js",
+    "test:azure-openai": "node scripts/test-azure-openai.js",
     "diagnose": "node scripts/test-wisphub-connection.js"
   },
   "repository": {
@@ -32,7 +33,8 @@
   },
   "homepage": "https://github.com/JohanStivenRengifo/Bot-Meta#readme",
   "dependencies": {
-    "@google/generative-ai": "^0.24.1",
+    "openai": "^4.68.0",
+    "@azure/identity": "^4.4.1",
     "axios": "^1.9.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

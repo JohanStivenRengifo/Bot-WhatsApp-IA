@@ -5,7 +5,7 @@ import {
     CustomerService,
     TicketService,
     PaymentService,
-    AIService,
+    AzureOpenAIService,
     SecurityService
 } from '../services';
 import { SessionManager } from '../services/SessionManager';
@@ -31,21 +31,22 @@ import { extractMenuCommand } from '../utils/messageUtils';
 
 export class MessageHandler {
     private users: Map<string, User> = new Map();
-    private userSessions: Map<string, SessionData> = new Map();
-    private messageService: MessageService;
+    private userSessions: Map<string, SessionData> = new Map(); private messageService: MessageService;
     private customerService: CustomerService;
     private ticketService: TicketService;
     private paymentService: PaymentService;
-    private aiService: AIService;
+    private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
     private flowManager: ConversationFlowManager;
-    private sessionManager: SessionManager; constructor() {
+    private sessionManager: SessionManager;
+
+    constructor() {
         this.messageService = new MessageService();
         this.customerService = new CustomerService();
         this.ticketService = new TicketService();
         this.paymentService = new PaymentService();
-        this.aiService = new AIService();
-        this.securityService = new SecurityService();        // Inicializar el gestor de sesiones
+        this.azureOpenAIService = new AzureOpenAIService();
+        this.securityService = new SecurityService();// Inicializar el gestor de sesiones
         this.sessionManager = new SessionManager(this.messageService);
 
         // Inicializar el gestor de flujos con el servicio de mensajes
@@ -223,11 +224,10 @@ export class MessageHandler {
         // Registrar el flujo de mejora de plan (antes del SalesFlow para mayor prioridad)
         this.flowManager.registerFlow(
             new PlanUpgradeFlow(this.messageService, this.securityService, this.customerService, this.ticketService)
-        );
-
-        // Registrar el flujo de ventas
+        );        // Registrar el flujo de ventas
         this.flowManager.registerFlow(
-            new SalesFlow(this.messageService, this.securityService, this.aiService, this.customerService));        // Registrar el flujo de facturas
+            new SalesFlow(this.messageService, this.securityService, this.customerService)
+        );// Registrar el flujo de facturas
         this.flowManager.registerFlow(
             new InvoicesFlow(this.messageService, this.securityService, this.customerService)
         );

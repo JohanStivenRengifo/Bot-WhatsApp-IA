@@ -31,14 +31,14 @@ export const config = {
 
     // WispHub API Configuration
     WISPHUB_API_URL: process.env.WISPHUB_API_URL || '',
-    WISPHUB_API_KEY: process.env.WISPHUB_API_KEY || '',
-    WISPHUB_DEFAULT_TECHNICIAN_ID: process.env.WISPHUB_DEFAULT_TECHNICIAN_ID || '',
+    WISPHUB_API_KEY: process.env.WISPHUB_API_KEY || '', WISPHUB_DEFAULT_TECHNICIAN_ID: process.env.WISPHUB_DEFAULT_TECHNICIAN_ID || '',
 
-    // AI Services Configuration
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    AI_PRIMARY_SERVICE: process.env.AI_PRIMARY_SERVICE || 'gemini',
-    AI_FALLBACK_SERVICE: process.env.AI_FALLBACK_SERVICE || 'openai',
+    // Azure OpenAI Configuration
+    AZURE_OPENAI_ENDPOINT: process.env.AZURE_OPENAI_ENDPOINT || '',
+    AZURE_OPENAI_API_KEY: process.env.AZURE_OPENAI_API_KEY || '',
+    AZURE_OPENAI_API_VERSION: process.env.AZURE_OPENAI_API_VERSION || '2024-12-01-preview',
+    AZURE_OPENAI_DEPLOYMENT_NAME: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'model-router',
+    AZURE_OPENAI_MODEL_NAME: process.env.AZURE_OPENAI_MODEL_NAME || 'model-router',
 
     // CRM Configuration
     CRM_API_URL: process.env.CRM_API_URL || 'http://localhost:4000/api/crm',
@@ -80,20 +80,16 @@ export const config = {
         baseUrl: process.env.WISPHUB_API_URL || '',
         apiKey: process.env.WISPHUB_API_KEY || '',
         defaultTechnicianId: process.env.WISPHUB_DEFAULT_TECHNICIAN_ID || ''
-    },
-    crm: {
+    }, crm: {
         baseUrl: process.env.CRM_API_URL || '',
         apiKey: process.env.CRM_API_KEY || ''
     },
-    ai: {
-        openai: {
-            apiKey: process.env.OPENAI_API_KEY || ''
-        },
-        gemini: {
-            apiKey: process.env.GEMINI_API_KEY || ''
-        },
-        primaryService: process.env.AI_PRIMARY_SERVICE || 'gemini',
-        fallbackService: process.env.AI_FALLBACK_SERVICE || 'openai'
+    azureOpenAI: {
+        endpoint: process.env.AZURE_OPENAI_ENDPOINT || '',
+        apiKey: process.env.AZURE_OPENAI_API_KEY || '',
+        apiVersion: process.env.AZURE_OPENAI_API_VERSION || '2024-12-01-preview',
+        deploymentName: process.env.AZURE_OPENAI_DEPLOYMENT_NAME || 'model-router',
+        modelName: process.env.AZURE_OPENAI_MODEL_NAME || 'model-router'
     },
     server: {
         port: parseInt(process.env.PORT || '3000')
@@ -107,21 +103,11 @@ export function validateEnvironment(): void {
         'PHONE_NUMBER_ID',
         'WISPHUB_API_URL',
         'WISPHUB_API_KEY',
+        'AZURE_OPENAI_ENDPOINT',
+        'AZURE_OPENAI_API_KEY',
         'CRM_API_URL',
         'CRM_API_KEY'
     ];
-
-    const aiVars = [
-        'OPENAI_API_KEY',
-        'GEMINI_API_KEY'
-    ];
-
-    // At least one AI service must be configured
-    const hasAIService = aiVars.some(varName => process.env[varName]);
-    if (!hasAIService) {
-        console.error('❌ At least one AI service must be configured (OpenAI or Gemini)');
-        process.exit(1);
-    }
 
     const missing = requiredVars.filter(varName => !process.env[varName]);
 

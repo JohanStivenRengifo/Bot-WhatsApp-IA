@@ -1,17 +1,17 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
-import { MessageService, SecurityService, AIService, CustomerService, TicketService } from '../services';
+import { MessageService, SecurityService, CustomerService, TicketService, AzureOpenAIService } from '../services';
 import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 import axios from 'axios';
 import { config } from '../config';
 
 /**
- * Flujo de ventas con IA avanzada
+ * Flujo de ventas con IA de Azure OpenAI
  */
 export class SalesFlow extends BaseConversationFlow {
     readonly name: string = 'sales';
 
-    private aiService: AIService;
+    private azureOpenAIService: AzureOpenAIService;
     private customerService: CustomerService;
     private ticketService: TicketService;
     private apiKey: string;
@@ -33,16 +33,13 @@ export class SalesFlow extends BaseConversationFlow {
         { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000, discount: 20000 },
         { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 90000, comboPrice: 70000, discount: 20000 },
         { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 120000, comboPrice: 100000, discount: 20000 }
-    ];
-
-    constructor(
+    ]; constructor(
         messageService: MessageService,
         securityService: SecurityService,
-        aiService: AIService,
         customerService: CustomerService
     ) {
         super(messageService, securityService);
-        this.aiService = aiService;
+        this.azureOpenAIService = new AzureOpenAIService();
         this.customerService = customerService;
         this.ticketService = new TicketService();
 
@@ -66,27 +63,23 @@ export class SalesFlow extends BaseConversationFlow {
             return false;
         }
 
-        // Detectar intención de contratar mediante palabras clave
-        const hasContractingIntent = isMenuCommand(message, [
-            'contratar', 'quiero el plan', 'me interesa', 'adquirir', 'comprar'
-        ]);
+        // Si el flujo de ventas no está activo, verificar intenciones específicas
+        if (session.flowActive !== 'sales' && !session.salesConversationStarted) {
+            // Solo activar si hay intención explícita de ventas
+            const salesKeywords = ['ventas', 'contratar', 'plan', 'planes', 'internet', 'tv', 'combo'];
+            const hasSalesIntent = salesKeywords.some(keyword =>
+                message.toLowerCase().includes(keyword) || extractedCommand === keyword
+            );
 
-        return (
-            // Usuario en flujo de ventas activo
-            session.flowActive === 'sales' ||
-            // Usuario ha seleccionado ventas y aceptado políticas
-            (session.selectedService === 'ventas' && user.acceptedPrivacyPolicy) ||
-            // Usuario dice "ventas" directamente
-            extractedCommand === 'ventas' ||
-            // Usuario solicita información de planes (pero no upgrade específico)
-            (isMenuCommand(message, ['plan', 'planes', 'internet']) && user.acceptedPrivacyPolicy &&
-                !planUpgradeKeywords.includes(extractedCommand)) ||
-            // Flujo activado automáticamente después de políticas
-            session.salesConversationStarted === true ||
-            // Usuario quiere contratar un plan
-            hasContractingIntent
-        );
-    }    /**
+            // También verificar si ha seleccionado ventas desde el menú
+            const selectedVentas = session.selectedService === 'ventas' && user.acceptedPrivacyPolicy;
+
+            return hasSalesIntent || selectedVentas;
+        }
+
+        // Si ya está en el flujo de ventas, continuar manejando
+        return session.flowActive === 'sales' || session.salesConversationStarted === true;
+    }/**
      * Maneja el mensaje del usuario
      */
     async handle(user: User, message: string, session: SessionData): Promise<boolean> {
@@ -103,14 +96,12 @@ export class SalesFlow extends BaseConversationFlow {
             // Si estamos en proceso de contratación, manejar ese flujo
             if (session.contractingPlan === true) {
                 return await this.handleContractingProcess(user, message, session);
-            }
-
-            // Mensaje de bienvenida si es la primera interacción
+            }            // Mensaje de bienvenida si es la primera interacción (usando IA)
             if (session.salesHistory.length === 0) {
                 await this.getWelcomeSalesMessage(user, session);
             }
 
-            // Detectar si el usuario quiere contratar un plan
+            // Detectar si el usuario quiere contratar un plan (usando IA también)
             if (message.toLowerCase().includes('contratar') ||
                 message.toLowerCase().includes('quiero el plan') ||
                 message.toLowerCase().includes('me interesa') ||
@@ -120,59 +111,37 @@ export class SalesFlow extends BaseConversationFlow {
                 return await this.startContractingProcess(user, message, session);
             }
 
-            // Detectar si el usuario solicita una propuesta formal
-            if (message.toLowerCase().includes('propuesta formal') ||
-                message.toLowerCase().includes('cotización formal') ||
-                message.toLowerCase().includes('envíame la propuesta') ||
-                message.toLowerCase().includes('enviar propuesta')) {
-
-                return await this.generateAndSendQuotation(user, message, session);
-            }
-
-            // Verificar si hay una respuesta predefinida para esta consulta
-            const predefinedResponse = this.getPredefinedResponse(message);
-            if (predefinedResponse) {
-                // Enviar respuesta predefinida sin usar IA
-                await this.messageService.sendTextMessage(user.phoneNumber, predefinedResponse);
-
-                // Guardar en historial
-                session.salesHistory.push({
-                    user: message,
-                    ai: predefinedResponse,
-                    timestamp: new Date()
-                });
-
-                return true;
-            }            // Construir contexto para la IA (solo si es necesario usar IA)
+            // Usar solo Azure OpenAI para todas las respuestas (eliminar respuestas estáticas)
             const context = this.buildSalesContext(user, session);
+            const plansData = this.getPlansData();
 
             try {
-                // Obtener respuesta de la IA para consultas no estándar
-                const aiResponse = await this.aiService.getSalesResponse(message, user, session.salesHistory.slice(-2));
+                // Obtener respuesta de Azure OpenAI con planes específicos
+                const response = await this.azureOpenAIService.getSalesResponse(message, plansData, context);
 
-                // Enviar respuesta al usuario
-                await this.messageService.sendTextMessage(user.phoneNumber, aiResponse);
+                if (response.success) {
+                    // Enviar respuesta al usuario
+                    await this.messageService.sendTextMessage(user.phoneNumber, response.message);
 
-                // Guardar en historial
-                session.salesHistory.push({
-                    user: message,
-                    ai: aiResponse,
-                    timestamp: new Date()
-                });
+                    // Guardar en historial
+                    session.salesHistory.push({
+                        user: message,
+                        ai: response.message,
+                        timestamp: new Date()
+                    });
+
+                    // Verificar si el cliente quiere proceder con instalación/cotización
+                    await this.checkForTicketCreation(user, message, response.message, session);
+                } else {
+                    throw new Error(response.error || 'Error en respuesta de IA');
+                }
             } catch (error) {
-                // Si falla la IA, usar respuesta de fallback
-                console.error('Error obteniendo respuesta de IA:', error);
-                const fallbackResponse = this.getFallbackResponse(message);
-
-                // Enviar respuesta de fallback
-                await this.messageService.sendTextMessage(user.phoneNumber, fallbackResponse);
-
-                // Guardar en historial
-                session.salesHistory.push({
-                    user: message,
-                    ai: fallbackResponse,
-                    timestamp: new Date()
-                });
+                // Si falla la IA, mostrar error y ofrecer contacto humano
+                console.error('Error obteniendo respuesta de Azure OpenAI:', error);
+                await this.messageService.sendTextMessage(
+                    user.phoneNumber,
+                    'Disculpa, tengo problemas técnicos en este momento. ¿Te gustaría que un asesor humano te contacte? Escribe "agente" para transferir tu consulta.'
+                );
             }
 
             return true;
@@ -194,40 +163,34 @@ export class SalesFlow extends BaseConversationFlow {
             item.user.toLowerCase().includes('contratar') ||
             item.ai.toLowerCase().includes('te envío la propuesta') ||
             item.ai.toLowerCase().includes('recibirás un correo')
-        );        // Contexto mínimo viable para reducir tokens enviados a la IA
-        let context = `
-INFORMACIÓN ESENCIAL:
-Eres Andrea, asesora comercial de Conecta2 Telecomunicaciones (Piendamó, Cauca, Colombia).
-${ventaCerrada ? '⚠️ NOTA IMPORTANTE: EL CLIENTE YA SOLICITÓ UNA PROPUESTA O CONTRATACIÓN. Confirma esto y finaliza amablemente.' : ''}
+        );
 
-PLANES DISPONIBLES (precios exactos, no modificar):
-INTERNET: 30Mbps($40k), 50Mbps($50k), 60Mbps($60k), 70Mbps($68k), 80Mbps($75k), 100Mbps($80k)
-TV: TV Completo ($40k, 85+ canales HD)
-COMBOS: Básico(30Mbps+TV=$60k, ahorro $20k), Familiar(50Mbps+TV=$70k, ahorro $20k), Premium(100Mbps+TV=$100k, ahorro $20k)
+        let context = `INFORMACIÓN DEL CLIENTE:
+- Teléfono: ${user.phoneNumber}
+- Estado de contratación: ${session.contractingPlan ? 'EN PROCESO' : 'CONSULTANDO'}
+- Historial de conversación: ${session.salesHistory?.length || 0} interacciones
+${ventaCerrada ? '⚠️ IMPORTANTE: Cliente ya solicitó contratación/propuesta anteriormente' : ''}
 
-INSTRUCCIONES:
-- Sé amigable y directo, no insistente
-- Respuestas breves (máx 3-4 líneas)
-- Si no sabes algo, sugiere contactar a un agente
-- Para consultas sobre precios, instalación o cobertura, usa los datos exactos
-`;
+INSTRUCCIONES ESPECÍFICAS:
+- Primera interacción: Presenta los servicios de manera atractiva y pregunta por sus necesidades
+- Cliente consultando: Enfócate en resolver dudas y recomendar el plan ideal según su uso
+- Cliente interesado en contratar: Guíalo hacia el proceso de contratación
+- Cliente con dudas técnicas: Explica beneficios de fibra óptica vs otros servicios
+- Cliente pidiendo precios: Muestra planes con precios exactos y destaca ahorros en combos`;
 
-        // Agregar solo las últimas 2 interacciones para reducir tokens
+        // Agregar solo las últimas 3 interacciones para mantener contexto relevante
         if (session.salesHistory && session.salesHistory.length > 0) {
-            context += '\nÚLTIMAS INTERACCIONES:\n';
-            session.salesHistory.slice(-2).forEach(item => {
-                // Limitar la longitud de los mensajes para reducir tokens
-                const userMsg = item.user.length > 100 ? item.user.substring(0, 100) + '...' : item.user;
-                const aiMsg = item.ai.length > 100 ? item.ai.substring(0, 100) + '...' : item.ai;
-                context += `Cliente: ${userMsg}\nAndrea: ${aiMsg}\n\n`;
+            context += '\n\nÚLTIMAS INTERACCIONES:\n';
+            session.salesHistory.slice(-3).forEach((item, index) => {
+                const userMsg = item.user.length > 150 ? item.user.substring(0, 150) + '...' : item.user;
+                const aiMsg = item.ai.length > 150 ? item.ai.substring(0, 150) + '...' : item.ai;
+                context += `${index + 1}. Cliente: "${userMsg}"\n   Andrea: "${aiMsg}"\n\n`;
             });
         }
 
         return context;
-    }
-
-    /**
-     * Inicia el proceso de contratación
+    }    /**
+     * Inicia el proceso de contratación usando IA para personalizar los mensajes
      */
     private async startContractingProcess(user: User, message: string, session: SessionData): Promise<boolean> {
         try {
@@ -243,14 +206,23 @@ INSTRUCCIONES:
                 startTime: new Date()
             };
 
-            // Enviar mensaje solicitando datos de contacto
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                `¡Excelente elección! 🎉 Has seleccionado el plan ${planInfo.name} por ${planInfo.price}.
+            // Usar IA para generar mensaje de inicio de contratación personalizado
+            const contractPrompt = `El cliente quiere contratar el ${planInfo.name} por ${planInfo.price}. Genera un mensaje entusiasta de confirmación y solicita su nombre completo para iniciar el proceso de contratación.`;
 
-Para continuar con tu contratación, necesito algunos datos:
+            try {
+                const response = await this.azureOpenAIService.sendMessage(contractPrompt);
 
-👤 Por favor, escribe tu nombre completo:`
-            );
+                if (response.success) {
+                    await this.messageService.sendTextMessage(user.phoneNumber, response.message);
+                } else {
+                    throw new Error('Error en respuesta de IA');
+                }
+            } catch (error) {
+                console.error('Error generando mensaje de contratación, usando fallback');
+                await this.messageService.sendTextMessage(user.phoneNumber,
+                    `¡Excelente elección! 🎉 Has seleccionado el plan ${planInfo.name} por ${planInfo.price}.\n\nPara continuar con tu contratación, necesito algunos datos:\n\n👤 Por favor, escribe tu nombre completo:`
+                );
+            }
 
             // Registrar en historial
             if (!session.salesHistory) {
@@ -357,24 +329,29 @@ Para continuar con tu contratación, necesito algunos datos:
 
 ` +
                             `¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
-                        );
-
-                        // Limpiar completamente el flujo de ventas después de todo
+                        );                        // Limpiar completamente el flujo de ventas después de todo
                         session.flowActive = undefined;
                         session.salesConversationStarted = false;
                         session.selectedService = undefined;
                         session.contractingPlan = false;
                         session.contractingStep = undefined;
                         session.contractData = undefined;
+                        // Limpiar también el historial de ventas para empezar de cero
+                        session.salesHistory = [];
 
                         console.log('✅ Flujo de ventas cerrado completamente después de crear el ticket');
                     } else {
-                        // Cancelar proceso
+                        // Cancelar proceso y limpiar completamente la sesión
                         session.contractingPlan = false;
                         session.contractingStep = undefined;
+                        session.contractData = undefined;
+                        session.flowActive = undefined;
+                        session.salesConversationStarted = false;
+                        session.selectedService = undefined;
+                        session.salesHistory = [];
 
                         await this.messageService.sendTextMessage(user.phoneNumber,
-                            "Has cancelado el proceso de contratación. Si deseas retomarlo o tienes alguna duda, estoy aquí para ayudarte."
+                            "Has cancelado el proceso de contratación. Si deseas retomarlo o tienes alguna duda, escribe 'ventas' para comenzar de nuevo."
                         );
                     }
                     break;
@@ -388,11 +365,13 @@ Para continuar con tu contratación, necesito algunos datos:
         } catch (error) {
             console.error('Error en proceso de contratación:', error);
             await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Lo siento, ha ocurrido un error. Te conectaré con un asesor humano en breve.');
-
-            // Limpiar estado de contratación
+                '❌ Lo siento, ha ocurrido un error. Te conectaré con un asesor humano en breve.');            // Limpiar estado de contratación si hay error
             session.contractingPlan = false;
             session.contractingStep = undefined;
+            session.contractData = undefined;
+            session.flowActive = undefined;
+            session.salesConversationStarted = false;
+            session.selectedService = undefined;
 
             return true;
         }
@@ -429,12 +408,10 @@ Para continuar con tu contratación, necesito algunos datos:
 ` +
                 `<p><strong>Teléfono adicional:</strong> ${session.contractData.alternativePhone}</p>
 ` +
-                `<p><strong>Fecha de solicitud:</strong> ${formattedDate}</p>`;
-
-            // Intentar crear ticket usando WispHub API
+                `<p><strong>Fecha de solicitud:</strong> ${formattedDate}</p>`;            // Intentar crear ticket usando WispHub API
             try {
                 const ticketData = new FormData();
-                ticketData.append('asuntos_default', "Nueva Contratación");
+                ticketData.append('asuntos_default', "Otro Asunto");
                 ticketData.append('asunto', "Nueva Contratación - Plan " + session.contractData.planName);
 
                 // Campo de técnico - REQUERIDO por WispHub API
@@ -545,71 +522,44 @@ Para continuar con tu contratación, necesito algunos datos:
             };
         }
     }    /**
-     * Genera mensaje de bienvenida personalizado para ventas
-     */    private async getWelcomeSalesMessage(user: User, session: SessionData): Promise<string> {
-        // Mensaje de bienvenida más directo y conciso
-        const welcomeMessage = `¡Hola! 👋 Soy Andrea de Conecta2 Telecomunicaciones.
-
-Tenemos los mejores planes de fibra óptica:
-
-🚀 Internet: desde $40.000/mes (50/20 Mbps)
-📺 TV HD: $40.000/mes (85+ canales)
-🔥 Combos: desde $60.000/mes (con descuentos hasta $20.000)
-
-¿Qué tipo de plan buscas? ¿Para gaming, trabajo, familia?`;
-
-        await this.messageService.sendTextMessage(user.phoneNumber, welcomeMessage);
-
-        // Guardar en historial
-        if (!session.salesHistory) {
-            session.salesHistory = [];
-        }
-
-        session.salesHistory.push({
-            user: "Usuario conectado a ventas",
-            ai: welcomeMessage,
-            timestamp: new Date()
-        });
-
-        return welcomeMessage;
-    }
-
-    /**
-     * Genera y envía una cotización formal
+     * Genera mensaje de bienvenida personalizado con IA
      */
-    private async generateAndSendQuotation(user: User, message: string, session: SessionData): Promise<boolean> {
+    private async getWelcomeSalesMessage(user: User, session: SessionData): Promise<string> {
+        const context = this.buildSalesContext(user, session);
+        const plansData = this.getPlansData();
+
+        // Usar IA para generar mensaje de bienvenida personalizado
+        const welcomePrompt = "El usuario acaba de conectarse al área de ventas. Genera un mensaje de bienvenida amigable y profesional que presente nuestros servicios de manera atractiva.";
+
         try {
-            // Extraer información del plan mencionado
-            const planInfo = this.extractPlanFromHistory(session.salesHistory || []);
+            const response = await this.azureOpenAIService.getSalesResponse(welcomePrompt, plansData, context);
 
-            // Enviar mensaje de confirmación más conciso
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                `✅ ¡Listo! Te enviaré la propuesta formal para ${planInfo.name} (${planInfo.price}).
+            if (response.success) {
+                await this.messageService.sendTextMessage(user.phoneNumber, response.message);
 
-Recibirás un correo con los detalles en breve y un asesor te contactará pronto.
+                // Guardar en historial
+                if (!session.salesHistory) {
+                    session.salesHistory = [];
+                }
 
-¿Deseas contratar este plan ahora? Responde "Sí quiero contratar" y te guiaré en el proceso.`
-            );
+                session.salesHistory.push({
+                    user: "Usuario conectado a ventas",
+                    ai: response.message,
+                    timestamp: new Date()
+                });
 
-            // Registrar en historial
-            if (!session.salesHistory) {
-                session.salesHistory = [];
+                return response.message;
+            } else {
+                throw new Error(response.error || 'Error generando mensaje de bienvenida');
             }
-
-            session.salesHistory.push({
-                user: message,
-                ai: `Propuesta formal enviada para plan ${planInfo.name}`,
-                timestamp: new Date()
-            });
-
-            return true;
         } catch (error) {
-            console.error('Error generando cotización:', error);
-            await this.messageService.sendTextMessage(user.phoneNumber,
-                '❌ Lo siento, no pude generar la propuesta. ¿Podrías intentarlo nuevamente?');
-            return false;
+            console.error('Error generando mensaje de bienvenida con IA:', error);
+            // Fallback muy básico si falla la IA
+            const fallbackMessage = `¡Hola! Soy Andrea de Conecta2 Telecomunicaciones. ¿En qué puedo ayudarte hoy?`;
+            await this.messageService.sendTextMessage(user.phoneNumber, fallbackMessage);
+            return fallbackMessage;
         }
-    }    /**
+    }/**
      * Extrae información del plan mencionado en el historial
      */
     private extractPlanFromHistory(history: Array<{ user: string, ai: string, timestamp?: Date }>): any {
@@ -705,95 +655,173 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
 
         // Si no encuentra nada, devuelve null
         return null;
+    }    /**
+     * Obtiene los datos de planes para enviar a la IA
+     */
+    private getPlansData() {
+        return {
+            internetPlans: this.internetPlans,
+            tvPlans: this.tvPlans,
+            comboPlan: this.comboPlan
+        };
+    }    /**
+     * Verifica si el cliente quiere proceder con instalación y crea ticket si es necesario
+     */
+    private async checkForTicketCreation(user: User, userMessage: string, aiResponse: string, session: SessionData): Promise<void> {
+        // Usar IA para detectar intención de crear ticket
+        const ticketDetectionPrompt = `
+Analiza esta conversación de ventas y determina si el cliente quiere:
+1. Crear una cotización/propuesta formal
+2. Proceder con instalación/contratación
+3. Que un técnico lo visite
+4. Hacer una consulta más formal
+
+Conversación:
+Cliente: "${userMessage}"
+Asesora: "${aiResponse}"
+
+Responde SOLO con:
+- "TICKET_COTIZACION" si quiere cotización formal
+- "TICKET_INSTALACION" si quiere instalar/contratar
+- "TICKET_CONSULTA" si quiere consulta técnica
+- "NO_TICKET" si solo está consultando información
+
+Respuesta:`;
+
+        try {
+            const response = await this.azureOpenAIService.sendMessage(ticketDetectionPrompt);
+
+            if (response.success) {
+                const action = response.message.trim().toUpperCase();
+
+                if (action.includes('TICKET_')) {
+                    await this.createTicketBasedOnAction(user, userMessage, aiResponse, session, action);
+                }
+            }
+        } catch (error) {
+            console.error('Error detectando necesidad de ticket:', error);
+            // Fallback a detección por palabras clave
+            const installationKeywords = [
+                'instalar', 'instalación', 'contratar', 'cotización', 'propuesta',
+                'agendar', 'programar', 'técnico', 'visita'
+            ];
+
+            const needsTicket = installationKeywords.some(keyword =>
+                userMessage.toLowerCase().includes(keyword) ||
+                aiResponse.toLowerCase().includes(keyword)
+            );
+
+            if (needsTicket) {
+                await this.createTicketBasedOnAction(user, userMessage, aiResponse, session, 'TICKET_INSTALACION');
+            }
+        }
     }
 
     /**
-     * Proporciona respuestas predefinidas para preguntas frecuentes sin usar IA
-     * @param message Mensaje del usuario
-     * @returns Respuesta predefinida o null si no hay coincidencia
+     * Crea ticket basado en la acción detectada
      */
-    private getPredefinedResponse(message: string): string | null {
-        const normalizedMessage = message.toLowerCase().trim();
+    private async createTicketBasedOnAction(user: User, userMessage: string, aiResponse: string, session: SessionData, action: string): Promise<void> {
+        try {
+            const planInfo = this.extractPlanFromConversation(session.salesHistory || []);
 
-        // Preguntas sobre precios de planes de internet
-        if (normalizedMessage.includes('precio') || normalizedMessage.includes('costo') || normalizedMessage.includes('valor') || normalizedMessage.includes('cuánto')) {
-            // Planes específicos
-            for (const plan of this.internetPlans) {
-                if (normalizedMessage.includes(plan.name.toLowerCase())) {
-                    return `El plan de Internet ${plan.name} tiene un costo de $${plan.price.toLocaleString('es-CO')} mensuales, con velocidad de ${plan.speed}. ${plan.description} 💯\n\n¿Te gustaría contratar este plan o conocer más detalles?`;
+            let category = 'consulta';
+            let priority = 'media';
+            let description = '';
+
+            switch (action) {
+                case 'TICKET_COTIZACION':
+                    category = 'cotizacion';
+                    priority = 'alta';
+                    description = `Solicitud de cotización formal - ${planInfo.planName}`;
+                    break;
+                case 'TICKET_INSTALACION':
+                    category = 'instalacion';
+                    priority = 'alta';
+                    description = `Solicitud de instalación - ${planInfo.planName}`;
+                    break;
+                case 'TICKET_CONSULTA':
+                    category = 'consulta';
+                    priority = 'media';
+                    description = `Consulta técnica sobre servicios`;
+                    break;
+            }
+
+            const ticketData = {
+                customerId: user.phoneNumber,
+                description: `${description}\nPrecio: $${planInfo.price}\nDetalles: ${planInfo.description}\n\nConversación:\nCliente: ${userMessage}\nAsistente: ${aiResponse}`,
+                category: category,
+                priority: priority as 'alta' | 'media' | 'baja',
+                source: 'whatsapp_sales_bot'
+            };
+
+            const ticketId = await this.ticketService.createTicket(ticketData);
+
+            if (ticketId) {
+                // Usar IA para generar respuesta de confirmación de ticket
+                const confirmationPrompt = `El cliente acaba de solicitar ${description.toLowerCase()}. Se creó el ticket #${ticketId}. Genera un mensaje de confirmación profesional y amigable explicando los próximos pasos.`;
+
+                const confirmationResponse = await this.azureOpenAIService.sendMessage(confirmationPrompt);
+
+                if (confirmationResponse.success) {
+                    await this.messageService.sendTextMessage(user.phoneNumber, confirmationResponse.message);
+                } else {
+                    // Fallback
+                    await this.messageService.sendTextMessage(
+                        user.phoneNumber,
+                        `✅ ¡Perfecto! He creado tu solicitud.\n\n📋 **Ticket #${ticketId}**\n📞 Nuestro equipo te contactará pronto.\n\n¿Hay algo más en lo que pueda ayudarte?`
+                    );
                 }
             }
+        } catch (error) {
+            console.error('Error creando ticket automático:', error);
+            await this.messageService.sendTextMessage(
+                user.phoneNumber,
+                '📞 Perfecto, un asesor te contactará pronto para continuar con el proceso.'
+            );
+        }
+    }/**
+     * Extrae información del plan de la conversación
+     */
+    private extractPlanFromConversation(salesHistory: any[]): { planName: string, price: string, description: string } {
+        const recentMessages = salesHistory.slice(-3); // Últimos 3 mensajes
+        let planName = 'Plan personalizado';
+        let price = 'Por definir';
+        let description = 'Según conversación con cliente';
 
-            // TV
-            if (normalizedMessage.includes('tv') || normalizedMessage.includes('televisión') || normalizedMessage.includes('television')) {
-                const tvPlan = this.tvPlans[0];
-                return `El plan de ${tvPlan.name} tiene un costo de $${tvPlan.price.toLocaleString('es-CO')} mensuales e incluye ${tvPlan.channels} 📺\n\n¿Te interesa contratar este servicio?`;
+        // Buscar menciones de planes de internet
+        for (const plan of this.internetPlans) {
+            const planMentioned = recentMessages.some(msg =>
+                msg.ai.toLowerCase().includes(plan.name.toLowerCase()) ||
+                msg.ai.includes(plan.price.toString()) ||
+                msg.user.toLowerCase().includes(plan.name.toLowerCase().split(' ')[0])
+            );
+
+            if (planMentioned) {
+                planName = plan.name;
+                price = plan.price.toString();
+                description = plan.description;
+                break;
             }
+        }
 
-            // Combos
+        // Buscar menciones de combos
+        if (planName === 'Plan personalizado') {
             for (const combo of this.comboPlan) {
-                if (normalizedMessage.includes(combo.name.toLowerCase()) || normalizedMessage.includes(combo.description.toLowerCase())) {
-                    return `El ${combo.name} (${combo.description}) tiene un costo de $${combo.comboPrice.toLocaleString('es-CO')} mensuales. ¡Un ahorro de $${(combo.originalPrice - combo.comboPrice).toLocaleString('es-CO')} mensuales! 🔥\n\n¿Te gustaría contratar este combo?`;
+                const comboMentioned = recentMessages.some(msg =>
+                    msg.ai.toLowerCase().includes(combo.name.toLowerCase()) ||
+                    msg.ai.includes(combo.comboPrice.toString()) ||
+                    msg.user.toLowerCase().includes('combo')
+                );
+
+                if (comboMentioned) {
+                    planName = combo.name;
+                    price = combo.comboPrice.toString();
+                    description = combo.description;
+                    break;
                 }
             }
-
-            // Precios en general (si no especificó un plan)
-            return `📊 **Precios de nuestros planes:**\n\n` +
-                `**Internet:**\n` +
-                this.internetPlans.map(p => `• ${p.name}: $${p.price.toLocaleString('es-CO')}/mes (${p.speed})`).join('\n') +
-                `\n\n**TV:**\n• ${this.tvPlans[0].name}: $${this.tvPlans[0].price.toLocaleString('es-CO')}/mes (${this.tvPlans[0].channels})` +
-                `\n\n**Combos (con descuento):**\n` +
-                this.comboPlan.map(c => `• ${c.name}: $${c.comboPrice.toLocaleString('es-CO')}/mes (${c.description})`).join('\n') +
-                `\n\n¿Cuál de estos planes te interesa más? 😊`;
         }
 
-        // Preguntas sobre cobertura
-        if (normalizedMessage.includes('cobertura') || normalizedMessage.includes('zona') || normalizedMessage.includes('barrio') ||
-            normalizedMessage.includes('disponible') || normalizedMessage.includes('llega')) {
-            return `Actualmente tenemos cobertura en Piendamó y zonas aledañas en el Cauca. Para verificar disponibilidad exacta en tu dirección, necesitaría que me indiques tu ubicación específica.\n\n¿Me podrías proporcionar tu dirección para verificar la cobertura? 🏠`;
-        }
-
-        // Preguntas sobre instalación
-        if (normalizedMessage.includes('instala') || normalizedMessage.includes('demora') || normalizedMessage.includes('tiempo') ||
-            normalizedMessage.includes('cuando') || normalizedMessage.includes('cuándo') || normalizedMessage.includes('cuanto tarda')) {
-            return `La instalación de nuestros servicios se realiza en un plazo de 1 a 3 días hábiles después de la contratación. El proceso de instalación toma aproximadamente 2 horas.\n\n¿Te gustaría agendar una instalación? 🔧`;
-        }
-
-        // Preguntas sobre ventajas/beneficios
-        if (normalizedMessage.includes('ventaja') || normalizedMessage.includes('beneficio') || normalizedMessage.includes('mejor') ||
-            normalizedMessage.includes('diferencia') || normalizedMessage.includes('por qué elegir') || normalizedMessage.includes('por que elegir')) {
-            return `✨ **Ventajas de Conecta2 Telecomunicaciones:**\n\n` +
-                `• **Fibra óptica 100%** - Conexión estable y de alta velocidad\n` +
-                `• **Soporte técnico 24/7** - Siempre disponibles para ayudarte\n` +
-                `• **Sin cláusulas de permanencia** - Libertad total\n` +
-                `• **Instalación rápida** - En 1-3 días hábiles\n` +
-                `• **Precios competitivos** - La mejor relación calidad-precio\n\n` +
-                `¿Qué plan te interesaría contratar? 🚀`;
-        }
-
-        // Si no hay coincidencia, devolver null para usar IA
-        return null;
-    }
-
-    /**
-     * Proporciona una respuesta de fallback cuando falla la IA
-     * Ayuda a reducir costos al no requerir reintentos de IA
-     */
-    private getFallbackResponse(message: string): string {
-        // Verificar si el mensaje contiene preguntas comunes
-        const normalizedMessage = message.toLowerCase().trim();
-
-        if (normalizedMessage.includes('hola') || normalizedMessage.includes('buenas') ||
-            normalizedMessage.length < 10) {
-            return `¡Hola! Soy Andrea de Conecta2 Telecomunicaciones. Estoy aquí para ayudarte con nuestros planes de internet y TV. ¿En qué puedo ayudarte hoy? 😊`;
-        }
-
-        if (normalizedMessage.includes('gracias') || normalizedMessage.includes('ok') ||
-            normalizedMessage.includes('entiendo')) {
-            return `¡De nada! Estoy para servirte. ¿Hay algo más en lo que pueda ayudarte con nuestros planes?`;
-        }
-
-        // Respuesta genérica que invita a elegir un plan
-        return `Gracias por tu mensaje. En Conecta2 Telecomunicaciones tenemos excelentes planes de internet desde $40.000/mes y combos con TV desde $60.000/mes.\n\n¿Te gustaría conocer más detalles sobre algún plan específico? O si prefieres, puedo ayudarte a encontrar el plan ideal según tus necesidades. 🌟`;
+        return { planName, price, description };
     }
 }
