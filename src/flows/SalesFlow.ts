@@ -215,9 +215,23 @@ export class SalesFlow extends BaseConversationFlow {
             return true;
         } catch (error) {
             console.error('Error en SalesFlow:', error);
+
+            // Usar el nuevo sistema de notificaciones si está disponible
+            try {
+                const NotificationService = require('../services/NotificationService').default;
+                const notificationService = NotificationService.getInstance();
+                await notificationService.sendErrorAlert(error as Error, {
+                    flow: 'SalesFlow',
+                    user: user.phoneNumber,
+                    session: session.flowActive
+                });
+            } catch (notificationError) {
+                console.error('Error enviando notificación:', notificationError);
+            }
+
             await this.messageService.sendTextMessage(
                 user.phoneNumber,
-                'Lo siento, ha ocurrido un error al procesar tu solicitud. Por favor, intenta nuevamente más tarde.'
+                'Lo siento, ha ocurrido un error al procesar tu solicitud. Nuestro equipo técnico ha sido notificado y trabajará para solucionarlo pronto.\n\n¿Te gustaría que te conecte con un agente humano?'
             );
             return false;
         }

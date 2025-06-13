@@ -18,7 +18,11 @@
     "db:migrate": "node scripts/migrate-database.js",
     "test:wisphub": "node scripts/test-wisphub-connection.js",
     "test:azure-openai": "node scripts/test-azure-openai.js",
-    "diagnose": "node scripts/test-wisphub-connection.js"
+    "diagnose": "node scripts/test-wisphub-connection.js",
+    "init-enhanced-services": "ts-node scripts/initialize-enhanced-services.ts",
+    "health-check": "ts-node -e \"import('./scripts/initialize-enhanced-services').then(m => new m.default().healthCheck().then(console.log))\"",
+    "backup-now": "ts-node -e \"import('./src/services/BackupService').then(m => m.default.getInstance().createBackup().then(console.log))\"",
+    "metrics-report": "ts-node -e \"import('./src/services/MetricsService').then(m => console.log(m.default.getInstance().getMetricsReport()))\""
   },
   "repository": {
     "type": "git",

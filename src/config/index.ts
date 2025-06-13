@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { enhancedConfig } from './enhanced';
 dotenv.config();
 
 export const config = {
@@ -64,10 +65,11 @@ export const config = {
 
     // Environment
     NODE_ENV: process.env.NODE_ENV || 'development',
-    LOG_LEVEL: process.env.LOG_LEVEL || 'info',
-
-    // JWT Secret (for CRM authentication)
+    LOG_LEVEL: process.env.LOG_LEVEL || 'info',    // JWT Secret (for CRM authentication)
     JWT_SECRET: process.env.JWT_SECRET || 'crm-secret-key-super-secure-2024',
+
+    // Enhanced services configuration
+    enhanced: enhancedConfig,
 
     // Legacy compatibility
     meta: {
