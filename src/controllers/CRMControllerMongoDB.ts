@@ -678,22 +678,22 @@ export class CRMControllerMongoDB {
      */
     private async notifyBotReactivation(phoneNumber: string, reason: string): Promise<void> {
         try {
-            console.log(`🔄 [CRM] Reactivando bot para ${phoneNumber} - Razón: ${reason}`);            // Importar dinámicamente MessageHandler
-            const MessageHandlerModule = await import('./MessageHandler');
+            console.log(`🔄 Reactivando bot para ${phoneNumber} - Razón: ${reason}`);
 
-            // Obtener la instancia singleton del MessageHandler
-            const messageHandlerInstance = MessageHandlerModule.MessageHandler.getInstance();
+            // Obtener la instancia del MessageHandler para reactivar el bot
+            const MessageHandler = require('./MessageHandler').default;
+            const messageHandlerInstance = MessageHandler.getInstance();
 
             if (messageHandlerInstance) {
                 // Reactivar el bot directamente a través del MessageHandler
                 await messageHandlerInstance.reactivateBotFromCRM(phoneNumber, reason);
-                console.log(`✅ [CRM] Bot reactivado exitosamente para ${phoneNumber}`);
+                console.log(`✅ Bot reactivado exitosamente para ${phoneNumber}`);
             } else {
-                console.warn(`⚠️ [CRM] No se pudo obtener instancia del MessageHandler para ${phoneNumber}`);
+                console.warn(`⚠️ No se pudo obtener instancia del MessageHandler para ${phoneNumber}`);
             }
 
         } catch (error) {
-            console.error('❌ [CRM] Error notificando reactivación del bot:', error);
+            console.error('Error notificando reactivación del bot:', error);
         }
     }
 }

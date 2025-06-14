@@ -57,10 +57,11 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
 }) => {
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [isLoading, setIsLoading] = useState(true);
-
   // Cargar configuración al inicializar
   useEffect(() => {
-    loadSettings();
+    // Temporalmente deshabilitado para debug
+    // loadSettings();
+    setIsLoading(false);
   }, []);
 
   const loadSettings = async (): Promise<void> => {

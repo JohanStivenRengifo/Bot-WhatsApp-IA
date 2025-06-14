@@ -163,6 +163,91 @@ class ApiClient {
     async updateSystemSettings(settings: any) {
         return this.post<ApiResponse<any>>('/api/crm/settings', settings);
     }
+
+    // Métodos de control del bot
+    async getBotStatus() {
+        return this.get<ApiResponse<any>>('/api/bot/status');
+    }
+
+    async getBotHealth() {
+        return this.get<ApiResponse<any>>('/api/bot/health');
+    }
+
+    async getBotConfig() {
+        return this.get<ApiResponse<any>>('/api/bot/config');
+    }
+
+    async updateBotConfig(config: any) {
+        return this.post<ApiResponse<any>>('/api/bot/config', config);
+    }
+
+    async pauseBot(data?: { reason?: string }) {
+        return this.post<ApiResponse<any>>('/api/bot/pause', data);
+    }
+
+    async resumeBot() {
+        return this.post<ApiResponse<any>>('/api/bot/resume');
+    }
+
+    async restartBot() {
+        return this.post<ApiResponse<any>>('/api/bot/restart');
+    }
+
+    async getBotFlows() {
+        return this.get<ApiResponse<any>>('/api/bot/flows');
+    }
+
+    async enableBotFlow(flowName: string) {
+        return this.post<ApiResponse<any>>(`/api/bot/flows/${flowName}/enable`);
+    }
+
+    async disableBotFlow(flowName: string) {
+        return this.post<ApiResponse<any>>(`/api/bot/flows/${flowName}/disable`);
+    }
+
+    async getBotSessions() {
+        return this.get<ApiResponse<any>>('/api/bot/sessions');
+    }
+
+    async clearUserSession(phoneNumber: string) {
+        return this.delete<ApiResponse>(`/api/bot/sessions/${phoneNumber}`);
+    }
+
+    async clearAllSessions() {
+        return this.delete<ApiResponse>('/api/bot/sessions');
+    }
+
+    async getBotMetrics() {
+        return this.get<ApiResponse<any>>('/api/bot/metrics/messages');
+    }
+
+    async getBotFlowMetrics() {
+        return this.get<ApiResponse<any>>('/api/bot/metrics/flows');
+    }
+
+    async getBotErrorMetrics() {
+        return this.get<ApiResponse<any>>('/api/bot/metrics/errors');
+    }
+
+    async getBotLogs(params?: { level?: string, limit?: number }) {
+        return this.get<ApiResponse<any>>('/api/bot/logs', params);
+    }
+
+    async getBotErrorLogs() {
+        return this.get<ApiResponse<any>>('/api/bot/logs/errors');
+    }
+
+    async enableMaintenanceMode(data?: { message?: string }) {
+        return this.post<ApiResponse<any>>('/api/bot/maintenance/enable', data);
+    }
+
+    async disableMaintenanceMode() {
+        return this.post<ApiResponse<any>>('/api/bot/maintenance/disable');
+    }
+
+    async getMaintenanceStatus() {
+        return this.get<ApiResponse<any>>('/api/bot/maintenance/status');
+    }
 }
 
 export const apiClient = new ApiClient();

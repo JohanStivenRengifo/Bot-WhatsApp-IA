@@ -24,8 +24,7 @@ import {
     DebtInquiryFlow,
     LogoutFlow,
     AgentHandoverFlow,
-    SuspendedServiceFlow,
-    SimplifiedUXFlow
+    SuspendedServiceFlow
 } from '../flows';
 import { isValidPassword } from '../utils';
 import { extractMenuCommand } from '../utils/messageUtils';
@@ -217,12 +216,8 @@ export class MessageHandler {
         }
     }/**
      * Registra todos los flujos de conversación disponibles
-     */    private registerConversationFlows(): void {
-        // Registrar el flujo de UX simplificada (ALTA PRIORIDAD - para usuarios que necesitan ayuda extra)
-        this.flowManager.registerFlow(
-            new SimplifiedUXFlow(this.messageService, this.securityService)
-        );
-
+     */
+    private registerConversationFlows(): void {
         // Registrar el flujo de selección inicial (debe ser primero)
         this.flowManager.registerFlow(
             new InitialSelectionFlow(this.messageService, this.securityService)
@@ -370,153 +365,51 @@ export class MessageHandler {
         } catch (error) {
             console.error('Error verificando inactividad del agente:', error);
         }
-    }    /**
+    }
+
+    /**
      * Reactiva el bot desde el CRM cuando se finaliza una conversación con agente
      */
     public async reactivateBotFromCRM(phoneNumber: string, reason: string): Promise<void> {
         try {
-            console.log(`🔄 [CRM REACTIVATION] Iniciando reactivación del bot para ${phoneNumber} - Razón: ${reason}`);
+            console.log(`🔄 Reactivando bot desde CRM para ${phoneNumber} - Razón: ${reason}`);
 
             // Obtener la sesión del usuario
-            let session = this.userSessions.get(phoneNumber);
+            const session = this.userSessions.get(phoneNumber);
             if (!session) {
-                console.log(`⚠️ [CRM REACTIVATION] No se encontró sesión para ${phoneNumber}, creando nueva sesión limpia`);                // Crear una nueva sesión limpia
-                session = {
-                    changingPassword: false,
-                    creatingTicket: false,
-                    flowActive: '',
-                    botPaused: false,
-                    conversationWithAgent: false,
-                    agentHandoverInProgress: false,
-                    crmConversationId: undefined,
-                    agentResponseTimeout: undefined,
-                    advisorAttempts: 0,
-                    lastActivity: new Date()
-                };
+                console.log(`⚠️ No se encontró sesión para ${phoneNumber}`);
+                return;
             }
 
-            // LIMPIAR COMPLETAMENTE EL ESTADO DE LA SESIÓN
-            console.log(`🧹 [CRM REACTIVATION] Estado anterior:`, {
-                botPaused: session.botPaused,
-                conversationWithAgent: session.conversationWithAgent,
-                flowActive: session.flowActive,
-                crmConversationId: session.crmConversationId,
-                agentHandoverInProgress: session.agentHandoverInProgress
-            });            // Reactivar el bot - ESTADO LIMPIO
+            // Reactivar el bot
             session.botPaused = false;
             session.conversationWithAgent = false;
             session.agentHandoverInProgress = false;
-            session.flowActive = ''; // Limpiar cualquier flujo activo
             session.crmConversationId = undefined;
-            session.advisorAttempts = 0;
-            session.lastActivity = new Date();
 
-            // Limpiar todos los flags de flujos específicos
-            session.changingPassword = false;
-            session.creatingTicket = false;
-            session.consultingInvoices = false;
-            session.upgradingPlan = false;
-            session.salesConversationStarted = false;
-            session.verifyingPayment = false;
-            session.contractingPlan = false;
-            session.diagnosticInProgress = false;
-            session.awaitingServiceSelection = false;            // Limpiar timeouts activos
+            // Limpiar timeouts
             if (session.agentResponseTimeout) {
                 clearTimeout(session.agentResponseTimeout);
                 session.agentResponseTimeout = undefined;
             }
-            if (session.sessionTimeout) {
-                clearTimeout(session.sessionTimeout);
-                session.sessionTimeout = undefined;
-            }
 
-            // FORZAR actualización de la sesión
+            // Actualizar la sesión
             this.userSessions.set(phoneNumber, session);
 
-            console.log(`🔧 [CRM REACTIVATION] Estado después de limpieza:`, {
-                botPaused: session.botPaused,
-                conversationWithAgent: session.conversationWithAgent,
-                flowActive: session.flowActive,
-                crmConversationId: session.crmConversationId,
-                agentHandoverInProgress: session.agentHandoverInProgress
-            });
-
-            // Notificar al usuario con mensaje claro
+            // Notificar al usuario
             await this.messageService.sendTextMessage(
                 phoneNumber,
-                '🤖 **Conversación con agente finalizada**\n\n' +
-                '✅ La conversación con nuestro agente ha terminado.\n' +
-                '🔄 El sistema automático está nuevamente activo y listo para ayudarte.\n\n' +
-                '📋 Escribe "menu" para ver todas las opciones disponibles\n' +
-                '� O escribe tu consulta directamente\n' +
-                '�👨‍💼 Si necesitas hablar nuevamente con un agente, escribe "agente"'
+                '🤖 **Conversación finalizada**\n\n' +
+                '✅ El agente ha finalizado la conversación.\n' +
+                '🔄 El sistema automático está nuevamente disponible para ayudarte.\n\n' +
+                '📋 Escribe "menu" para ver las opciones disponibles\n' +
+                '👨‍💼 O escribe "agente" si necesitas hablar nuevamente con un humano'
             );
 
-            // Pequeña pausa para asegurar que el mensaje llegue
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            // Enviar mensaje de bienvenida del menú
-            await this.messageService.sendTextMessage(
-                phoneNumber,
-                '🎯 **¿En qué puedo ayudarte?**\n\n' +
-                '1️⃣ Información de servicios\n' +
-                '2️⃣ Estado de tu cuenta\n' +
-                '3️⃣ Facturas y pagos\n' +
-                '4️⃣ Soporte técnico\n' +
-                '5️⃣ Hablar con un agente\n\n' +
-                'Escribe el número de la opción o describe tu consulta 👆'
-            );
-
-            console.log(`✅ [CRM REACTIVATION] Bot reactivado exitosamente para ${phoneNumber} - Estado completamente limpio`);
+            console.log(`✅ Bot reactivado exitosamente desde CRM para ${phoneNumber}`);
 
         } catch (error) {
-            console.error('❌ [CRM REACTIVATION] Error reactivando bot desde CRM:', error);
-            throw error;
+            console.error('Error reactivando bot desde CRM:', error);
         }
-    }
-
-    /**
-     * Detecta si un usuario podría beneficiarse de una interfaz más simple
-     * basado en patrones de confusión o uso repetido de comandos incorrectos
-     */
-    private shouldUseSimplifiedUX(user: User, session: SessionData): boolean {
-        // Si el usuario ha mostrado patrones de confusión
-        if (session.confusionCount && session.confusionCount >= 2) {
-            return true;
-        }
-
-        // Si el usuario ha intentado múltiples comandos incorrectos
-        if (session.incorrectCommandCount && session.incorrectCommandCount >= 3) {
-            return true;
-        }
-
-        // Si no tiene historial de autenticación exitosa (posiblemente nuevo)
-        if (!user.authenticated && !user.lastSuccessfulAuth) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Incrementa el contador de confusión del usuario
-     */
-    private incrementConfusionCounter(session: SessionData): void {
-        session.confusionCount = (session.confusionCount || 0) + 1;
-    }
-
-    /**
-     * Incrementa el contador de comandos incorrectos
-     */
-    private incrementIncorrectCommandCounter(session: SessionData): void {
-        session.incorrectCommandCount = (session.incorrectCommandCount || 0) + 1;
-    }
-
-    /**
-     * Resetea los contadores de confusión cuando el usuario completa una acción exitosamente
-     */
-    private resetConfusionCounters(session: SessionData): void {
-        session.confusionCount = 0;
-        session.incorrectCommandCount = 0;
     }
 }

@@ -30,6 +30,7 @@ import {
   Logout as LogoutIcon,
   AccountCircle as AccountCircleIcon,
   Notifications as NotificationsIcon,
+  SmartToy as SmartToyIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealTimeMetrics, useWebSocketEvents } from '../../hooks/useApi';
@@ -41,6 +42,11 @@ const menuItems = [
   { text: 'Conversaciones', icon: ChatIcon, path: '/dashboard/conversations' },
   { text: 'Agentes', icon: PeopleIcon, path: '/dashboard/agents' },
   { text: 'Analytics', icon: AnalyticsIcon, path: '/dashboard/analytics' },
+  {
+    text: 'Control del Bot',
+    icon: SmartToyIcon,
+    path: '/dashboard/bot-control',
+  },
   { text: 'Configuración', icon: SettingsIcon, path: '/dashboard/settings' },
 ];
 

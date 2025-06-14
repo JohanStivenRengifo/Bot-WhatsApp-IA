@@ -16,4 +16,3 @@ export * from './DebtInquiryFlow';
 export * from './LogoutFlow';
 export * from './AgentHandoverFlow';
 export * from './SuspendedServiceFlow';
-export * from './SimplifiedUXFlow';

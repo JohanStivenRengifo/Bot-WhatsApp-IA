@@ -105,16 +105,15 @@ export class ClientMenuFlow extends BaseConversationFlow {
                 case 'cerrar_sesion':
                     // Activar cierre de sesión
                     session.flowActive = 'logout';
-                    return false; // Permitir que LogoutFlow maneje                default:
-                    // Opción no reconocida, mostrar menú simplificado para facilitar navegación
+                    return false; // Permitir que LogoutFlow maneje
+
+                default:
+                    // Opción no reconocida, mostrar menú nuevamente
                     await this.messageService.sendTextMessage(user.phoneNumber,
-                        '❓ No entendí tu selección. Te muestro las opciones principales:');
-                    await this.messageService.sendSimplifiedMenu(user.phoneNumber);
+                        '❓ No entendí tu selección. Por favor, usa el menú interactivo para seleccionar una opción:');
+                    await this.messageService.sendMainMenu(user.phoneNumber);
                     return true;
             }
-
-            // Retorno por defecto para casos donde no se ejecuta ningún case específico
-            return false;
 
         } catch (error) {
             console.error('Error en flujo de menú de cliente:', error);

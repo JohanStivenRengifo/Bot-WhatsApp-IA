@@ -100,6 +100,30 @@ export class SalesFlow extends BaseConversationFlow {
      * Maneja el mensaje del usuario
      */    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
         try {
+            // Manejar mensajes de cortesía después de contratación exitosa
+            if ((session as any).contractCompletedAt) {
+                const timeSinceCompletion = Date.now() - (session as any).contractCompletedAt.getTime();
+                if (timeSinceCompletion < 120000) { // 2 minutos
+                    const courtesyMessages = ['gracias', 'thank', 'ok', 'perfecto', 'excelente', 'muy bien', 'genial'];
+                    if (courtesyMessages.some(word => message.toLowerCase().includes(word))) {
+                        await this.messageService.sendTextMessage(user.phoneNumber,
+                            `¡De nada! Fue un placer ayudarte con tu contratación. 😊\n\nSi necesitas algo más en el futuro, escribe "menu" para ver todas las opciones disponibles.\n\n¡Bienvenido a la familia Conecta2! 🎉`
+                        );
+
+                        // Limpiar completamente la sesión después de responder
+                        delete (session as any).contractCompletedAt;
+                        session.flowActive = undefined;
+                        session.salesConversationStarted = false;
+                        session.selectedService = undefined;
+
+                        return true;
+                    }
+                } else {
+                    // Limpiar el estado después de 2 minutos
+                    delete (session as any).contractCompletedAt;
+                }
+            }
+
             // Inicializar historial de ventas si no existe
             if (!session.salesHistory) {
                 session.salesHistory = [];
@@ -371,22 +395,18 @@ Para continuar con tu contratación, necesito algunos datos:
                         await this.messageService.sendTextMessage(user.phoneNumber,
                             `✅ **¡Contratación Exitosa!**
 
-Hemos registrado tu solicitud para el plan ${planName}.
+` +
+                            `Hemos registrado tu solicitud para el plan ${planName}.
 
-🔍 Un asesor se pondrá en contacto contigo en las próximas 24 horas para coordinar la instalación.
+` +
+                            `🔍 Un asesor se pondrá en contacto contigo en las próximas 24 horas para coordinar la instalación.
 
-📅 Fecha estimada de instalación: 1-3 días hábiles.
+` +
+                            `📅 Fecha estimada de instalación: 1-3 días hábiles.
 
-¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
-                        );
-
-                        // LIMPIAR COMPLETAMENTE LA SESIÓN - REINICIO TOTAL
-                        this.clearCompleteSession(user, session);
-
-                        // Mostrar menú inicial como si fuera la primera vez
-                        await this.showInitialWelcomeMenu(user.phoneNumber);
-
-                        console.log('✅ Sesión completamente reiniciada después de contratación exitosa');// Limpiar completamente el flujo de ventas después de todo
+` +
+                            `¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
+                        );                        // Limpiar completamente el flujo de ventas después de todo
                         session.flowActive = undefined;
                         session.salesConversationStarted = false;
                         session.selectedService = undefined;
@@ -834,88 +854,5 @@ Recibirás un correo con los detalles en breve y un asesor te contactará pronto
 
         // Respuesta genérica que invita a elegir un plan
         return `Gracias por tu mensaje. En Conecta2 Telecomunicaciones tenemos excelentes planes de internet desde $40.000/mes y combos con TV desde $60.000/mes.\n\n¿Te gustaría conocer más detalles sobre algún plan específico? O si prefieres, puedo ayudarte a encontrar el plan ideal según tus necesidades. 🌟`;
-    }
-
-    /**
-     * Limpia completamente la sesión del usuario - REINICIO TOTAL
-     */
-    private clearCompleteSession(user: User, session: SessionData): void {
-        // Limpiar todos los flags de flujo
-        session.flowActive = undefined;
-        session.salesConversationStarted = false;
-        session.selectedService = undefined;
-        session.contractingPlan = false;
-        session.contractingStep = undefined;
-        session.contractData = undefined;
-        session.salesHistory = [];
-        session.step = undefined;
-        session.awaitingServiceSelection = false;
-        session.changingPassword = false;
-        session.creatingTicket = false;
-        session.consultingInvoices = false;
-        session.upgradingPlan = false;
-        session.verifyingPayment = false;
-        session.diagnosticInProgress = false;
-        session.agentHandoverInProgress = false;
-        session.botPaused = false;
-        session.conversationWithAgent = false;
-
-        // Limpiar estados temporales
-        delete (session as any).contractCompletedAt;
-
-        // Resetear usuario como si fuera nuevo
-        user.hasSelectedService = false;
-        user.authenticated = false;
-        user.acceptedPrivacyPolicy = false;
-        user.customerId = undefined;
-        user.sessionId = undefined;
-        user.sessionExpiresAt = undefined;
-        user.encryptedData = undefined;
-        user.awaitingDocument = false;
-
-        console.log('🔄 Sesión completamente limpiada - reinicio total');
-    }
-
-    /**
-     * Muestra el menú inicial de bienvenida como si fuera la primera vez
-     */
-    private async showInitialWelcomeMenu(phoneNumber: string): Promise<void> {
-        // Enviar mensaje de bienvenida con opciones como usuario nuevo
-        const welcomeMessage = {
-            messaging_product: 'whatsapp',
-            to: phoneNumber,
-            type: 'interactive',
-            interactive: {
-                type: 'button',
-                header: {
-                    type: 'text',
-                    text: '🌟 ¡Bienvenido a Conecta2 Telecomunicaciones!'
-                },
-                body: {
-                    text: '¡Hola! Soy tu asistente virtual de Conecta2 Telecomunicaciones. ¿En qué puedo ayudarte hoy? 😊\n\nSelecciona una opción:'
-                },
-                action: {
-                    buttons: [
-                        {
-                            type: 'reply',
-                            reply: {
-                                id: 'ventas',
-                                title: '🛒 Ventas'
-                            }
-                        },
-                        {
-                            type: 'reply',
-                            reply: {
-                                id: 'soporte',
-                                title: '🔧 Ya soy cliente'
-                            }
-                        }
-                    ]
-                }
-            }
-        };
-
-        await this.messageService.sendMessage(welcomeMessage);
-        console.log('🏁 Menú inicial mostrado - bot reiniciado completamente');
     }
 }

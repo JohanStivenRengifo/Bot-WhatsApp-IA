@@ -113,7 +113,9 @@ export function extractMenuCommand(message: string | any): string {
         'finalizar sesión': 'cerrar_sesion',
         'finalizar sesion': 'cerrar_sesion',
         'logout': 'cerrar_sesion', 'terminar sesion': 'cerrar_sesion',
-        'terminar sesión': 'cerrar_sesion',        // Agentes humanos - Patrones más específicos
+        'terminar sesión': 'cerrar_sesion',
+
+        // Agentes humanos
         'hablar_agente': 'hablar_agente',
         'hablar con agente': 'hablar_agente',
         'agente': 'hablar_agente',
@@ -125,9 +127,6 @@ export function extractMenuCommand(message: string | any): string {
         'representante': 'hablar_agente',
         'persona real': 'hablar_agente',
         '👨‍💼 hablar con agente': 'hablar_agente',
-        'hablar con agente\ncontactar soporte humano': 'hablar_agente',
-        '👨‍💼 hablar con agente\ncontactar soporte humano': 'hablar_agente',
-        'contactar soporte humano': 'hablar_agente',
 
         // Comandos generales
         'menu': 'menu',
@@ -141,13 +140,7 @@ export function extractMenuCommand(message: string | any): string {
         'terminar': 'finalizar',
         'salir': 'finalizar',
         'ayuda': 'ayuda',
-        'help': 'ayuda',
-
-        // Adicionales para cerrar sesión específicos
-        '👋 cerrar sesión': 'cerrar_sesion',
-        'cerrar sesión\nfinalizar sesión actual': 'cerrar_sesion',
-        '👋 cerrar sesión\nfinalizar sesión actual': 'cerrar_sesion',
-        'finalizar sesión actual': 'cerrar_sesion'
+        'help': 'ayuda'
     };
 
     // 1. Primero, verificar si es un ID directo
@@ -290,67 +283,4 @@ export function containsKeywords(message: string, keywords: string[]): boolean {
     return keywords.some(keyword =>
         normalizedMessage.includes(keyword.toLowerCase())
     );
-}
-
-/**
- * Detecta si un mensaje muestra confusión del usuario
- */
-export function detectsConfusion(message: string): boolean {
-    if (!message || typeof message !== 'string') return false;
-
-    const confusionPatterns = [
-        'no entiendo', 'no comprendo', 'no se', 'no sé', 'no entendi',
-        'ayuda', 'help', 'socorro', 'auxilio',
-        'como', 'cómo', 'que hago', 'qué hago', 'que puedo hacer', 'qué puedo hacer',
-        'perdido', 'confundido', 'confundida', 'perdida',
-        'no funciona', 'no sirve', 'no anda', 'está roto', 'roto',
-        'error', 'problema', 'falla', 'fallo',
-        'no puedo', 'no logro', 'no consigo',
-        'dificil', 'difícil', 'complicado', 'complicada',
-        'explicar', 'explique', 'expliqueme', 'explícame'
-    ];
-
-    const normalizedMessage = message.toLowerCase().trim();
-    return confusionPatterns.some(pattern => normalizedMessage.includes(pattern));
-}
-
-/**
- * Detecta si un usuario podría ser rural o de bajo nivel digital
- * basado en patrones de escritura y comunicación
- */
-export function detectsRuralUser(message: string): boolean {
-    if (!message || typeof message !== 'string') return false;
-
-    const ruralPatterns = [
-        // Saludo muy formal o tradicional
-        'buenos dias', 'buenas tardes', 'buenas noches',
-        'que dios', 'bendiciones', 'favor de', 'por favor',
-        // Falta de tecnología
-        'no se usar', 'no sé usar', 'no manejo', 'no entiendo de',
-        'soy mayor', 'adulto mayor', 'tercera edad',
-        'mi hijo', 'mi hija', 'mi nieto', 'mi nieta',
-        // Problemas de conectividad rural
-        'señal', 'cobertura', 'zona rural', 'campo', 'finca', 'vereda',
-        'montaña', 'monte', 'pueblo', 'municipio',
-        // Patrones de escritura simple
-        'porfavor', 'xfavor', 'xfa', 'gracias d corazon'
-    ];
-
-    const normalizedMessage = message.toLowerCase().trim();
-    return ruralPatterns.some(pattern => normalizedMessage.includes(pattern));
-}
-
-/**
- * Detecta comandos incorrectos repetidos
- */
-export function isIncorrectCommand(message: string, validCommands: string[]): boolean {
-    if (!message || typeof message !== 'string') return false;
-
-    const extractedCommand = extractMenuCommand(message);
-
-    // Si no hay comando extraído, podría ser un comando incorrecto
-    if (!extractedCommand) return true;
-
-    // Verificar si el comando está en la lista de comandos válidos
-    return !validCommands.includes(extractedCommand);
 }

@@ -197,42 +197,17 @@ export class CRMServiceMongoDB extends EventEmitter {
 
     /**
      * Crear conversación
-     */    async createConversation(phoneNumber: string, customerName?: string): Promise<Conversation> {
+     */
+    async createConversation(phoneNumber: string, customerName?: string): Promise<Conversation> {
         try {
-            // Verificar si ya existe una conversación activa para este número
+            // Verificar si ya existe una conversación activa
             const existingConversation = await this.db.findOne('conversations', {
                 phoneNumber,
                 status: { $in: ['active', 'pending'] }
             });
 
             if (existingConversation) {
-                console.log(`⚠️ Conversación activa existente encontrada para ${phoneNumber}:`, existingConversation._id);
                 return MongoDBService.objectIdToString(existingConversation);
-            }
-
-            // También verificar conversaciones recientes (últimas 24 horas) para evitar duplicados
-            const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const recentConversation = await this.db.findOne('conversations', {
-                phoneNumber,
-                createdAt: { $gte: twentyFourHoursAgo },
-                status: { $ne: 'closed' }
-            });
-
-            if (recentConversation) {
-                console.log(`⚠️ Conversación reciente encontrada para ${phoneNumber}:`, recentConversation._id);
-                // Actualizar estado a active si no lo está
-                if (recentConversation.status !== 'active') {
-                    await this.db.updateOne('conversations',
-                        { _id: recentConversation._id },
-                        {
-                            $set: {
-                                status: 'active',
-                                updatedAt: new Date()
-                            }
-                        }
-                    );
-                }
-                return MongoDBService.objectIdToString(recentConversation);
             } const now = new Date();
             const newConversation = {
                 phoneNumber,

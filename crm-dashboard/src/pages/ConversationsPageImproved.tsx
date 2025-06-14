@@ -50,14 +50,7 @@ const ConversationsPageImproved: React.FC = () => {
     refreshKey,
   });
   const conversations = conversationsResponse?.data || [];
-
-  // Deduplicar conversaciones por ID
-  const uniqueConversations = conversations.filter(
-    (conversation: Conversation, index: number, self: Conversation[]) =>
-      index === self.findIndex((c: Conversation) => c.id === conversation.id)
-  );
-
-  const totalPages = Math.ceil((uniqueConversations.length || 0) / 10);
+  const totalPages = Math.ceil((conversationsResponse?.data?.length || 0) / 10);
 
   // Función para obtener el color del estado
   const getStatusColor = (status: string) => {
@@ -135,11 +128,11 @@ const ConversationsPageImproved: React.FC = () => {
                 >
                   <RefreshIcon />
                 </IconButton>
-              </Tooltip>{' '}
+              </Tooltip>
               <div className="bg-white rounded-lg px-4 py-2 shadow-sm border">
                 <div className="text-sm text-gray-500">Total</div>{' '}
                 <div className="text-2xl font-bold text-gray-900">
-                  {uniqueConversations.length}
+                  {conversations.length}
                 </div>
               </div>
             </div>
@@ -243,7 +236,7 @@ const ConversationsPageImproved: React.FC = () => {
                 </CardContent>
               </Card>
             ))
-          ) : uniqueConversations.length === 0 ? (
+          ) : conversations.length === 0 ? (
             // Estado vacío mejorado
             <Card className="shadow-sm border-0">
               <CardContent className="p-12 text-center">
@@ -276,7 +269,7 @@ const ConversationsPageImproved: React.FC = () => {
             </Card>
           ) : (
             // Lista de conversaciones
-            uniqueConversations.map((conversation: Conversation) => (
+            conversations.map((conversation: Conversation) => (
               <Card
                 key={conversation.id}
                 className="shadow-sm border-0 hover:shadow-md transition-all duration-200 cursor-pointer group"

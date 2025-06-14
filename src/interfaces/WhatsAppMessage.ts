@@ -159,11 +159,6 @@ export interface SessionData {
     agentLastActivity?: Date; // Última actividad del agente
     agentResponseTimeout?: NodeJS.Timeout; // Timeout para reactivar bot si agente no responde
 
-    // Contadores para UX adaptativa
-    confusionCount?: number; // Contador de veces que el usuario muestra confusión
-    incorrectCommandCount?: number; // Contador de comandos incorrectos consecutivos
-    simplifiedUXPreferred?: boolean; // Preferencia del usuario por UX simplificada
-
     // Historial de conversación de ventas
     salesHistory?: Array<{
         user: string;

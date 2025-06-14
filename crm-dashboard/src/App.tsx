@@ -15,12 +15,13 @@ import { SettingsProvider } from './contexts/SettingsContext';
 // Componentes de páginas
 import LoginPage from './pages/LoginPage';
 import DashboardLayout from './components/layout/DashboardLayout';
-import DashboardHomeImproved from './pages/DashboardHomeImproved';
+import DashboardHome from './pages/DashboardHome';
 import ConversationsPageImproved from './pages/ConversationsPageImproved';
-import ConversationDetailPageImproved from './pages/ConversationDetailPageImproved';
-import AgentsPageImproved from './pages/AgentsPageImproved';
-import AnalyticsPageImproved from './pages/AnalyticsPageImproved';
-import SettingsPageImproved from './pages/SettingsPageImproved';
+import ConversationDetailPage from './pages/ConversationDetailPage';
+import AgentsPage from './pages/AgentsPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import SettingsPageSimple from './pages/SettingsPageSimple';
+import BotControlPage from './pages/BotControlPage';
 
 // Configuración del cliente de React Query
 const queryClient = new QueryClient({
@@ -149,18 +150,19 @@ function App() {
                     </ProtectedRoute>
                   }
                 >
-                  <Route index element={<DashboardHomeImproved />} />
+                  <Route index element={<DashboardHome />} />
                   <Route
                     path="conversations"
                     element={<ConversationsPageImproved />}
                   />
                   <Route
                     path="conversations/:id"
-                    element={<ConversationDetailPageImproved />}
+                    element={<ConversationDetailPage />}
                   />
-                  <Route path="agents" element={<AgentsPageImproved />} />
-                  <Route path="analytics" element={<AnalyticsPageImproved />} />
-                  <Route path="settings" element={<SettingsPageImproved />} />
+                  <Route path="agents" element={<AgentsPage />} />
+                  <Route path="analytics" element={<AnalyticsPage />} />
+                  <Route path="settings" element={<SettingsPageSimple />} />
+                  <Route path="bot-control" element={<BotControlPage />} />
                 </Route>
 
                 {/* Redireccionamiento por defecto */}

@@ -75,6 +75,12 @@ export class AgentHandoverFlow extends BaseConversationFlow {
         if (typeof message !== 'string') return false;
 
         try {
+            // Verificar si el usuario está autenticado
+            if (!user.authenticated) {
+                await this.handleUnauthenticatedUser(user);
+                return true;
+            }
+
             const messageLower = message.toLowerCase().trim();
 
             // Caso especial: múltiples intentos de "asesor"
@@ -90,14 +96,7 @@ export class AgentHandoverFlow extends BaseConversationFlow {
                 session.advisorAttempts = 0;
             }
 
-            // Verificar si el usuario está autenticado
-            if (!user.authenticated) {
-                // Para usuarios no autenticados, ofrecer opciones más amigables
-                await this.handleUnauthenticatedAgentRequest(user, session);
-                return true;
-            }
-
-            // Iniciar proceso de handover para usuarios autenticados
+            // Iniciar proceso de handover
             await this.initiateAgentHandover(user, session);
             return true;
 
@@ -109,25 +108,22 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             );
             return true;
         }
-    }    /**
+    }
+
+    /**
      * Maneja usuarios no autenticados que quieren hablar con agente
-     * Proporciona opciones más amigables sin forzar autenticación inmediata
      */
-    private async handleUnauthenticatedAgentRequest(user: User, session: SessionData): Promise<void> {
+    private async handleUnauthenticatedUser(user: User): Promise<void> {
         await this.messageService.sendTextMessage(
             user.phoneNumber,
-            '� **¡Hola! Quieres hablar con un agente.**\n\n' +
-            '� **Si ya eres cliente:**\n' +
-            'Escribe tu número de cédula para autenticarte\n\n' +
-            '🛒 **Si acabas de contratar o eres nuevo:**\n' +
-            'Te conectaré con ventas para ayudarte\n\n' +
-            '📞 **Llamada directa:**\n' +
-            'Llama al **3242156679** (disponible 24/7)\n\n' +
-            '¿Eres cliente existente? Escribe tu cédula.\n' +
-            '¿Necesitas ventas/soporte general? Escribe "agente".'
-        );        // Marcar que está esperando respuesta sobre tipo de usuario
-        session.awaitingServiceSelection = true;
-    }/**
+            '🔐 **Para conectarte con un agente necesitas autenticarte primero.**\n\n' +
+            '📋 **¿Qué necesitas hacer?**\n' +
+            '1️⃣ Escribe tu **número de cédula** para autenticarte\n' +
+            '2️⃣ Una vez autenticado, podrás hablar con un agente\n\n' +
+            '📞 **¿Es una emergencia?**\n' +
+            'Puedes llamar directamente al **3242156679**'
+        );
+    }    /**
      * Inicia el proceso de transferencia a agente humano
      */
     private async initiateAgentHandover(user: User, session: SessionData): Promise<void> {
@@ -139,8 +135,10 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             session.conversationWithAgent = true;
 
             // Obtener información del usuario para el agente
-            const userInfo = await this.getUserContextForAgent(user);            // Crear conversación en el CRM MongoDB
-            const conversationId = await this.createCRMConversation(user, userInfo, session);
+            const userInfo = await this.getUserContextForAgent(user);
+
+            // Crear conversación en el CRM MongoDB
+            const conversationId = await this.createCRMConversation(user, userInfo);
 
             // Guardar el ID de conversación en la sesión
             session.crmConversationId = conversationId;
@@ -160,10 +158,12 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             console.error('❌ Error en handover:', error);
             throw error;
         }
-    }    /**
+    }
+
+    /**
      * Crea una conversación en el CRM MongoDB
      */
-    private async createCRMConversation(user: User, userInfo: object, session: SessionData): Promise<string> {
+    private async createCRMConversation(user: User, userInfo: object): Promise<string> {
         try {
             // Obtener nombre del usuario
             let customerName = 'Cliente';
@@ -174,23 +174,7 @@ export class AgentHandoverFlow extends BaseConversationFlow {
                 } catch (error) {
                     console.error('Error al decodificar datos del usuario:', error);
                 }
-            } console.log(`🔍 AgentHandoverFlow: Iniciando handover para ${user.phoneNumber}`);
-            console.log(`📊 Estado de sesión actual:`, {
-                flowActive: session.flowActive,
-                conversationWithAgent: session.conversationWithAgent,
-                botPaused: session.botPaused
-            });
-
-            // Verificar si ya hay una conversación activa para este usuario
-            const existingConversations = await this.crmService.getConversations({
-                phoneNumber: user.phoneNumber,
-                status: 'active',
-                limit: 5
-            });
-
-            console.log(`📋 Conversaciones existentes para ${user.phoneNumber}:`, existingConversations.conversations.length);
-
-            // Crear conversación en MongoDB usando CRMServiceMongoDB
+            }            // Crear conversación en MongoDB usando CRMServiceMongoDB
             const conversation = await this.crmService.createConversation(
                 user.phoneNumber,
                 customerName
