@@ -75,12 +75,6 @@ export class AgentHandoverFlow extends BaseConversationFlow {
         if (typeof message !== 'string') return false;
 
         try {
-            // Verificar si el usuario está autenticado
-            if (!user.authenticated) {
-                await this.handleUnauthenticatedUser(user);
-                return true;
-            }
-
             const messageLower = message.toLowerCase().trim();
 
             // Caso especial: múltiples intentos de "asesor"
@@ -96,7 +90,14 @@ export class AgentHandoverFlow extends BaseConversationFlow {
                 session.advisorAttempts = 0;
             }
 
-            // Iniciar proceso de handover
+            // Verificar si el usuario está autenticado
+            if (!user.authenticated) {
+                // Para usuarios no autenticados, ofrecer opciones más amigables
+                await this.handleUnauthenticatedAgentRequest(user, session);
+                return true;
+            }
+
+            // Iniciar proceso de handover para usuarios autenticados
             await this.initiateAgentHandover(user, session);
             return true;
 
@@ -108,22 +109,25 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             );
             return true;
         }
-    }
-
-    /**
+    }    /**
      * Maneja usuarios no autenticados que quieren hablar con agente
+     * Proporciona opciones más amigables sin forzar autenticación inmediata
      */
-    private async handleUnauthenticatedUser(user: User): Promise<void> {
+    private async handleUnauthenticatedAgentRequest(user: User, session: SessionData): Promise<void> {
         await this.messageService.sendTextMessage(
             user.phoneNumber,
-            '🔐 **Para conectarte con un agente necesitas autenticarte primero.**\n\n' +
-            '📋 **¿Qué necesitas hacer?**\n' +
-            '1️⃣ Escribe tu **número de cédula** para autenticarte\n' +
-            '2️⃣ Una vez autenticado, podrás hablar con un agente\n\n' +
-            '📞 **¿Es una emergencia?**\n' +
-            'Puedes llamar directamente al **3242156679**'
-        );
-    }    /**
+            '� **¡Hola! Quieres hablar con un agente.**\n\n' +
+            '� **Si ya eres cliente:**\n' +
+            'Escribe tu número de cédula para autenticarte\n\n' +
+            '🛒 **Si acabas de contratar o eres nuevo:**\n' +
+            'Te conectaré con ventas para ayudarte\n\n' +
+            '📞 **Llamada directa:**\n' +
+            'Llama al **3242156679** (disponible 24/7)\n\n' +
+            '¿Eres cliente existente? Escribe tu cédula.\n' +
+            '¿Necesitas ventas/soporte general? Escribe "agente".'
+        );        // Marcar que está esperando respuesta sobre tipo de usuario
+        session.awaitingServiceSelection = true;
+    }/**
      * Inicia el proceso de transferencia a agente humano
      */
     private async initiateAgentHandover(user: User, session: SessionData): Promise<void> {

@@ -9,6 +9,7 @@ export interface User {
     sessionId?: string;
     sessionExpiresAt?: Date;
     lastActivity?: Date;
+    lastSuccessfulAuth?: Date; // Fecha de última autenticación exitosa
     encryptedData?: string;
     awaitingDocument?: boolean;
 

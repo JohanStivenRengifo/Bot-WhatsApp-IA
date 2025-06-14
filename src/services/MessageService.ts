@@ -412,4 +412,56 @@ export class MessageService {
             ]
         );
     }
+
+    /**
+     * Envía un menú simplificado con botones para mejor usabilidad en zona rural
+     */
+    async sendSimplifiedMenu(phoneNumber: string): Promise<void> {
+        const menuMessage = {
+            messaging_product: 'whatsapp',
+            to: phoneNumber,
+            type: 'interactive',
+            interactive: {
+                type: 'button',
+                header: {
+                    type: 'text',
+                    text: '🌐 Conecta2 - Menú Principal'
+                },
+                body: {
+                    text: 'Selecciona qué necesitas hacer:\n\n' +
+                        '• Consultar tu factura o deuda\n' +
+                        '• Reportar un problema técnico\n' +
+                        '• Hablar con un agente humano\n\n' +
+                        'Escoge una opción:'
+                },
+                action: {
+                    buttons: [
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'factura_deuda',
+                                title: '💰 Factura/Deuda'
+                            }
+                        },
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'soporte_tecnico',
+                                title: '🔧 Problema Técnico'
+                            }
+                        },
+                        {
+                            type: 'reply',
+                            reply: {
+                                id: 'hablar_agente',
+                                title: '👨‍💼 Hablar con Agente'
+                            }
+                        }
+                    ]
+                }
+            }
+        };
+
+        await this.sendMessage(menuMessage);
+    }
 }

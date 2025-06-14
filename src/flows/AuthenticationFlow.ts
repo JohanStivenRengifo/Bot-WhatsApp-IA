@@ -78,12 +78,12 @@ export class AuthenticationFlow extends BaseConversationFlow {
                     await this.handleInactiveCustomer(user, customerData);
                 } else {
                     // Autenticación exitosa para usuario activo
-                    await this.handleSuccessfulAuthentication(user, customerData);
+                    await this.handleSuccessfulAuthentication(user, customerData, session);
                 }
                 return true;
             } else {
                 // Falló la autenticación
-                await this.handleFailedAuthentication(user);
+                await this.handleFailedAuthentication(user, message);
                 return true;
             }
         } catch (error) {
@@ -127,20 +127,24 @@ export class AuthenticationFlow extends BaseConversationFlow {
             isInactive: true
         }));        // Mostrar menú específico para servicio suspendido (solo contactar agente)
         await this.messageService.sendSuspendedServiceMenu(user.phoneNumber);
-    }
-
-    /**
+    }    /**
      * Maneja autenticación exitosa de un cliente activo
      */
-    private async handleSuccessfulAuthentication(user: User, customerData: any): Promise<void> {
+    private async handleSuccessfulAuthentication(user: User, customerData: any, session?: SessionData): Promise<void> {
         this.securityService.recordAuthAttempt(user.phoneNumber, true); user.authenticated = true;
         user.customerId = customerData.id;
+        user.lastSuccessfulAuth = new Date(); // Registrar fecha de autenticación exitosa
 
         // Crear sesión segura
         const sessionId = this.securityService.createSession(user.phoneNumber);
-        user.sessionId = sessionId;
-        user.sessionExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas
-        user.lastActivity = new Date();        // Encriptar datos sensibles con información completa del servicio
+        user.sessionId = sessionId; user.sessionExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas
+        user.lastActivity = new Date();
+
+        // Resetear contadores de confusión al autenticarse exitosamente
+        if (session) {
+            session.confusionCount = 0;
+            session.incorrectCommandCount = 0;
+        }// Encriptar datos sensibles con información completa del servicio
         user.encryptedData = this.securityService.encryptSensitiveData(JSON.stringify({
             customerId: customerData.id,
             id_servicio: customerData.id,
@@ -162,7 +166,7 @@ export class AuthenticationFlow extends BaseConversationFlow {
     /**
      * Maneja el caso de autenticación fallida
      */
-    private async handleFailedAuthentication(user: User): Promise<void> {
+    private async handleFailedAuthentication(user: User, attemptedInput: string): Promise<void> {
         const canRetry = this.securityService.recordAuthAttempt(user.phoneNumber, false);
         const remainingAttempts = this.securityService.getRemainingAuthAttempts(user.phoneNumber);
 
@@ -173,12 +177,16 @@ export class AuthenticationFlow extends BaseConversationFlow {
                 'Si necesitas ayuda inmediata, contacta a nuestro equipo de soporte.');
         } else {
             await this.messageService.sendTextMessage(user.phoneNumber,
-                `❌ No pude encontrar tu información con esos datos.\n\n` +
-                `Verifica que hayas ingresado correctamente:\n` +
-                `• Tu número de cédula/documento de identidad, O\n` +
-                `• Tu ID de servicio (número de cliente)\n\n` +
+                `❌ No pude encontrar tu información con el dato ingresado: "${attemptedInput}"\n\n` +
+                `💡 **Opciones para ingresar:**\n` +
+                `• Tu número de cédula (ej: 12345678)\n` +
+                `• Tu número de documento de identidad\n` +
+                `• Tu ID de cliente/servicio\n\n` +
                 `⚠️ Intentos restantes: ${remainingAttempts}\n\n` +
-                `Si continúas teniendo problemas, escribe "ayuda" para contactar a un agente.`);
+                `📞 **¿Necesitas ayuda?**\n` +
+                `• Escribe "ayuda" para contactar un agente\n` +
+                `• Llama al 3242156679\n` +
+                `• Escribe "ventas" para servicios comerciales`);
         }
     }
 }

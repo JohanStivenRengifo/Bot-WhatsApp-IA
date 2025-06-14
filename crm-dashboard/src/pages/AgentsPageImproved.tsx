@@ -19,6 +19,24 @@ import { apiClient } from '../services/api';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 
+// Helper function para formatear fechas de manera segura
+const formatDateSafe = (
+  dateValue: string | Date | null | undefined,
+  formatString: string = 'dd/MM/yyyy HH:mm'
+): string => {
+  if (!dateValue) return 'Nunca';
+
+  try {
+    const date = new Date(dateValue);
+    if (isNaN(date.getTime())) return 'Fecha inválida';
+
+    return format(date, formatString, { locale: es });
+  } catch (error) {
+    console.warn('Error formatting date:', error);
+    return 'Error en fecha';
+  }
+};
+
 interface Agent {
   id: string;
   username: string;
@@ -318,16 +336,11 @@ const AgentsPageImproved: React.FC = () => {
                           <div className="flex items-center space-x-1">
                             <Mail className="h-4 w-4" />
                             <span>{agent.email}</span>
-                          </div>
+                          </div>{' '}
                           <div className="flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
+                            <Calendar className="h-4 w-4" />{' '}
                             <span>
-                              Último acceso:{' '}
-                              {format(
-                                new Date(agent.lastLogin),
-                                'dd/MM/yyyy HH:mm',
-                                { locale: es }
-                              )}
+                              Último acceso: {formatDateSafe(agent.lastLogin)}
                             </span>
                           </div>
                         </div>

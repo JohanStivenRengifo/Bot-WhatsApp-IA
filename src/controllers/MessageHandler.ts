@@ -24,7 +24,8 @@ import {
     DebtInquiryFlow,
     LogoutFlow,
     AgentHandoverFlow,
-    SuspendedServiceFlow
+    SuspendedServiceFlow,
+    SimplifiedUXFlow
 } from '../flows';
 import { isValidPassword } from '../utils';
 import { extractMenuCommand } from '../utils/messageUtils';
@@ -216,8 +217,12 @@ export class MessageHandler {
         }
     }/**
      * Registra todos los flujos de conversación disponibles
-     */
-    private registerConversationFlows(): void {
+     */    private registerConversationFlows(): void {
+        // Registrar el flujo de UX simplificada (ALTA PRIORIDAD - para usuarios que necesitan ayuda extra)
+        this.flowManager.registerFlow(
+            new SimplifiedUXFlow(this.messageService, this.securityService)
+        );
+
         // Registrar el flujo de selección inicial (debe ser primero)
         this.flowManager.registerFlow(
             new InitialSelectionFlow(this.messageService, this.securityService)
@@ -468,5 +473,50 @@ export class MessageHandler {
             console.error('❌ [CRM REACTIVATION] Error reactivando bot desde CRM:', error);
             throw error;
         }
+    }
+
+    /**
+     * Detecta si un usuario podría beneficiarse de una interfaz más simple
+     * basado en patrones de confusión o uso repetido de comandos incorrectos
+     */
+    private shouldUseSimplifiedUX(user: User, session: SessionData): boolean {
+        // Si el usuario ha mostrado patrones de confusión
+        if (session.confusionCount && session.confusionCount >= 2) {
+            return true;
+        }
+
+        // Si el usuario ha intentado múltiples comandos incorrectos
+        if (session.incorrectCommandCount && session.incorrectCommandCount >= 3) {
+            return true;
+        }
+
+        // Si no tiene historial de autenticación exitosa (posiblemente nuevo)
+        if (!user.authenticated && !user.lastSuccessfulAuth) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Incrementa el contador de confusión del usuario
+     */
+    private incrementConfusionCounter(session: SessionData): void {
+        session.confusionCount = (session.confusionCount || 0) + 1;
+    }
+
+    /**
+     * Incrementa el contador de comandos incorrectos
+     */
+    private incrementIncorrectCommandCounter(session: SessionData): void {
+        session.incorrectCommandCount = (session.incorrectCommandCount || 0) + 1;
+    }
+
+    /**
+     * Resetea los contadores de confusión cuando el usuario completa una acción exitosamente
+     */
+    private resetConfusionCounters(session: SessionData): void {
+        session.confusionCount = 0;
+        session.incorrectCommandCount = 0;
     }
 }
