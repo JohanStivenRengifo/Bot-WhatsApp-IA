@@ -9,7 +9,7 @@ export class NotificationController {
 
     constructor(users: Map<string, User>) {
         this.users = users;
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
         this.customerService = new CustomerService();
     }
 

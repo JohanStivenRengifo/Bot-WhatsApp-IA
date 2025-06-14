@@ -15,7 +15,7 @@ export class PaymentReceiptFlow implements ConversationFlow {
     private ticketService: TicketService;
 
     constructor() {
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
         this.imageStorageService = new ImageStorageService();
         this.paymentValidationService = new PaymentValidationService();
         this.ticketService = new TicketService();

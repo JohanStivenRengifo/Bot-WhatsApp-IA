@@ -31,7 +31,7 @@ export class NotificationService {
     private alertHistory: Alert[] = [];
 
     private constructor() {
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
         this.loadConfig();
         this.startMonitoring();
     }
@@ -140,6 +140,136 @@ export class NotificationService {
 • Estado del servicio externo`;
 
         await this.sendErrorAlert(error, { service, timestamp: new Date() });
+    }
+
+    /**
+     * Notifica a agentes sobre transferencia de conversación (handover)
+     */
+    async sendHandoverAlert(
+        phoneNumber: string,
+        customerName: string,
+        reason: string,
+        priority: 'low' | 'medium' | 'high' | 'urgent' = 'medium',
+        context?: any
+    ): Promise<void> {
+        const priorityEmoji = {
+            low: '🟢',
+            medium: '🟡',
+            high: '🟠',
+            urgent: '🔴'
+        };
+
+        const message = `${priorityEmoji[priority]} **TRANSFERENCIA A AGENTE**
+
+👤 **Cliente:** ${customerName}
+📱 **Teléfono:** ${phoneNumber}
+🔄 **Motivo:** ${reason}
+📋 **Prioridad:** ${priority.toUpperCase()}
+🕐 **Hora:** ${new Date().toLocaleString()}
+
+${context?.lastMessages ?
+                `📝 **Últimos mensajes:**
+${context.lastMessages.slice(-3).map((msg: any) =>
+                    `• ${msg.from === 'bot' ? '🤖' : '👤'} ${msg.text}`).join('\n')}`
+                : ''}
+
+${context?.userData ?
+                `📊 **Información del cliente:**
+• Conversaciones previas: ${context.userData.totalConversations || 0}
+• Último contacto: ${context.userData.lastContact || 'Primera vez'}
+• Estado: ${context.userData.status || 'Activo'}`
+                : ''}
+
+⚡ **Acciones necesarias:**
+• Responder al cliente en máximo 3 minutos
+• Revisar historial de conversación
+• Actualizar estado en CRM`;
+
+        // Crear alerta de tipo info para handover
+        const alert: Alert = {
+            id: this.generateAlertId(),
+            type: priority === 'urgent' ? 'critical' : 'info',
+            message: `Handover solicitado para ${customerName} (${phoneNumber}): ${reason}`,
+            timestamp: new Date(),
+            resolved: false,
+            context: {
+                phoneNumber,
+                customerName,
+                reason,
+                priority,
+                type: 'handover',
+                ...context
+            }
+        };
+
+        await this.processAlert(alert);
+
+        // También enviar notificación específica a agentes disponibles
+        await this.notifyAvailableAgents(message, alert);
+    }
+
+    /**
+     * Notifica a agentes disponibles sobre handover
+     */
+    private async notifyAvailableAgents(message: string, alert: Alert): Promise<void> {
+        // Obtener lista de agentes disponibles desde variables de entorno
+        const agentPhones = process.env.CRM_AGENT_PHONES?.split(',') || [];
+
+        if (agentPhones.length === 0) {
+            console.warn('⚠️ No hay agentes configurados para recibir notificaciones de handover');
+            return;
+        }
+
+        for (const agentPhone of agentPhones) {
+            try {
+                await this.messageService.sendTextMessage(agentPhone.trim(), message);
+                console.log(`📧 Notificación de handover enviada a agente: ${agentPhone}`);
+            } catch (error) {
+                console.error(`Error enviando notificación de handover a agente ${agentPhone}:`, error);
+            }
+        }
+    }
+
+    /**
+     * Notifica resolución de handover
+     */
+    async sendHandoverResolution(
+        phoneNumber: string,
+        customerName: string,
+        agentName: string,
+        resolutionTime: number,
+        summary?: string
+    ): Promise<void> {
+        const message = `✅ **HANDOVER RESUELTO**
+
+👤 **Cliente:** ${customerName}
+📱 **Teléfono:** ${phoneNumber}
+👨‍💼 **Agente:** ${agentName}
+⏱️ **Tiempo de resolución:** ${Math.round(resolutionTime / 60)} minutos
+🕐 **Finalizado:** ${new Date().toLocaleString()}
+
+${summary ? `📝 **Resumen:** ${summary}` : ''}
+
+🔄 **Cliente devuelto al bot automático**`;
+
+        // Enviar a administradores y agentes
+        const alert: Alert = {
+            id: this.generateAlertId(),
+            type: 'info',
+            message: `Handover resuelto para ${customerName} por ${agentName}`,
+            timestamp: new Date(),
+            resolved: true,
+            context: {
+                phoneNumber,
+                customerName,
+                agentName,
+                resolutionTime,
+                summary,
+                type: 'handover_resolved'
+            }
+        };
+
+        await this.processAlert(alert);
     }
 
     /**

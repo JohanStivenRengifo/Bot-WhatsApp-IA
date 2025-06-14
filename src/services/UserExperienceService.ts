@@ -27,7 +27,7 @@ export class UserExperienceService {
     private conversationContexts: Map<string, ConversationContext> = new Map();
 
     private constructor() {
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
         this.initializeService();
     }
 

@@ -30,6 +30,7 @@ import { isValidPassword } from '../utils';
 import { extractMenuCommand } from '../utils/messageUtils';
 
 export class MessageHandler {
+    private static instance: MessageHandler;
     private users: Map<string, User> = new Map();
     private userSessions: Map<string, SessionData> = new Map(); private messageService: MessageService;
     private customerService: CustomerService;
@@ -38,10 +39,8 @@ export class MessageHandler {
     private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
     private flowManager: ConversationFlowManager;
-    private sessionManager: SessionManager;
-
-    constructor() {
-        this.messageService = new MessageService();
+    private sessionManager: SessionManager; private constructor() {
+        this.messageService = MessageService.getInstance();
         this.customerService = new CustomerService();
         this.ticketService = new TicketService();
         this.paymentService = new PaymentService();
@@ -59,6 +58,11 @@ export class MessageHandler {
         setInterval(() => {
             this.sessionManager.cleanupExpiredSessions();
         }, 5 * 60 * 1000); // Cada 5 minutos
+    } public static getInstance(): MessageHandler {
+        if (!MessageHandler.instance) {
+            MessageHandler.instance = new MessageHandler();
+        }
+        return MessageHandler.instance;
     } async processMessage(message: WhatsAppMessage): Promise<void> {
         const phoneNumber = message.from;
 
@@ -160,6 +164,22 @@ export class MessageHandler {
                 this.userSessions.set(user.phoneNumber, session);
             }
 
+            // VERIFICAR SI EL BOT ESTÁ PAUSADO POR CONVERSACIÓN CON AGENTE
+            if (session.botPaused && session.conversationWithAgent) {
+                console.log(`🚫 Bot pausado para ${user.phoneNumber} - Conversación activa con agente`);
+
+                // Guardar el mensaje del cliente en el CRM
+                if (session.crmConversationId && typeof message === 'string') {
+                    await this.saveClientMessageToCRM(session.crmConversationId, user.phoneNumber, message);
+                }
+
+                // Verificar si el agente ha estado inactivo por mucho tiempo
+                await this.checkAgentInactivity(user, session);
+
+                // NO procesar el mensaje con los flujos del bot
+                return;
+            }
+
             // Si el usuario está autenticado, validar sesión activa
             if (user.authenticated) {
                 const sessionValidation = this.securityService.validateSession(user.phoneNumber);
@@ -209,14 +229,17 @@ export class MessageHandler {
         );        // Registrar el flujo de autenticación
         this.flowManager.registerFlow(
             new AuthenticationFlow(this.messageService, this.securityService, this.customerService)
-        );
-
-        // Registrar el flujo de menú de cliente (para navegación post-autenticación)
+        );        // Registrar el flujo de menú de cliente (para navegación post-autenticación)
         this.flowManager.registerFlow(
             new ClientMenuFlow(this.messageService, this.securityService)
         );
 
-        // Registrar el flujo de creación de tickets (alta prioridad)
+        // Registrar el flujo de handover a agente humano (ALTA PRIORIDAD - antes que otros flujos)
+        this.flowManager.registerFlow(
+            new AgentHandoverFlow(this.messageService, this.securityService, this.ticketService)
+        );
+
+        // Registrar el flujo de creación de tickets (después del AgentHandover)
         this.flowManager.registerFlow(
             new TicketCreationFlow(this.messageService, this.securityService, this.ticketService)
         );
@@ -256,14 +279,194 @@ export class MessageHandler {
             new LogoutFlow(this.messageService, this.securityService)
         );
 
-        // Registrar el flujo de handover a agente humano
-        this.flowManager.registerFlow(
-            new AgentHandoverFlow(this.messageService, this.securityService, this.ticketService)
-        );
-
         // Registrar el flujo para servicios suspendidos
         this.flowManager.registerFlow(
             new SuspendedServiceFlow(this.messageService, this.securityService)
         );
+    }
+
+    /**
+     * Guarda el mensaje del cliente en el CRM cuando hay una conversación activa con agente
+     */
+    private async saveClientMessageToCRM(conversationId: string, phoneNumber: string, message: string): Promise<void> {
+        try {
+            console.log(`💬 Guardando mensaje del cliente en CRM - Conversación: ${conversationId}`);
+
+            // Importar el servicio CRM
+            const { CRMServiceMongoDB } = await import('../services/CRMServiceMongoDB');
+            const crmService = CRMServiceMongoDB.getInstance();
+
+            // Guardar el mensaje en la base de datos del CRM
+            await crmService.saveMessage({
+                conversationId,
+                fromNumber: phoneNumber,
+                toNumber: process.env.PHONE_NUMBER_ID || '',
+                content: message,
+                messageType: 'text',
+                isFromBot: false,
+                isFromCustomer: true,
+                timestamp: new Date(),
+                metadata: {
+                    source: 'whatsapp_during_agent_conversation'
+                }
+            });
+
+            console.log(`✅ Mensaje del cliente guardado en CRM`);
+        } catch (error) {
+            console.error('Error guardando mensaje del cliente en CRM:', error);
+        }
+    }
+
+    /**
+     * Verifica si el agente ha estado inactivo y reactiva el bot si es necesario
+     */
+    private async checkAgentInactivity(user: User, session: SessionData): Promise<void> {
+        try {
+            const AGENT_TIMEOUT_MINUTES = 30; // 30 minutos de inactividad del agente
+
+            if (!session.agentLastActivity) {
+                // Si no hay actividad registrada del agente, usar el tiempo de handover
+                session.agentLastActivity = session.handoverStartTime || new Date();
+            }
+
+            const now = new Date();
+            const timeSinceLastAgentActivity = now.getTime() - session.agentLastActivity.getTime();
+            const minutesInactive = Math.floor(timeSinceLastAgentActivity / (1000 * 60));
+
+            console.log(`⏰ Agente inactivo por ${minutesInactive} minutos`);
+
+            if (minutesInactive >= AGENT_TIMEOUT_MINUTES) {
+                console.log(`🔄 Reactivando bot por inactividad del agente - Usuario: ${user.phoneNumber}`);
+
+                // Reactivar el bot
+                session.botPaused = false;
+                session.conversationWithAgent = false;
+                session.agentHandoverInProgress = false;
+
+                // Limpiar timeouts
+                if (session.agentResponseTimeout) {
+                    clearTimeout(session.agentResponseTimeout);
+                    session.agentResponseTimeout = undefined;
+                }
+
+                // Notificar al usuario
+                await this.messageService.sendTextMessage(
+                    user.phoneNumber,
+                    '🤖 **Bot reactivado**\n\n' +
+                    '⏰ El agente no ha respondido en un tiempo prolongado.\n' +
+                    '🔄 He reactivado el sistema automático para ayudarte.\n\n' +
+                    '📋 Escribe "menu" para ver las opciones disponibles\n' +
+                    '👨‍💼 O escribe "agente" si necesitas hablar nuevamente con un humano'
+                );
+
+                // Actualizar la sesión
+                this.userSessions.set(user.phoneNumber, session);
+            }
+        } catch (error) {
+            console.error('Error verificando inactividad del agente:', error);
+        }
+    }    /**
+     * Reactiva el bot desde el CRM cuando se finaliza una conversación con agente
+     */
+    public async reactivateBotFromCRM(phoneNumber: string, reason: string): Promise<void> {
+        try {
+            console.log(`🔄 [CRM REACTIVATION] Iniciando reactivación del bot para ${phoneNumber} - Razón: ${reason}`);
+
+            // Obtener la sesión del usuario
+            let session = this.userSessions.get(phoneNumber);
+            if (!session) {
+                console.log(`⚠️ [CRM REACTIVATION] No se encontró sesión para ${phoneNumber}, creando nueva sesión limpia`);                // Crear una nueva sesión limpia
+                session = {
+                    changingPassword: false,
+                    creatingTicket: false,
+                    flowActive: '',
+                    botPaused: false,
+                    conversationWithAgent: false,
+                    agentHandoverInProgress: false,
+                    crmConversationId: undefined,
+                    agentResponseTimeout: undefined,
+                    advisorAttempts: 0,
+                    lastActivity: new Date()
+                };
+            }
+
+            // LIMPIAR COMPLETAMENTE EL ESTADO DE LA SESIÓN
+            console.log(`🧹 [CRM REACTIVATION] Estado anterior:`, {
+                botPaused: session.botPaused,
+                conversationWithAgent: session.conversationWithAgent,
+                flowActive: session.flowActive,
+                crmConversationId: session.crmConversationId,
+                agentHandoverInProgress: session.agentHandoverInProgress
+            });            // Reactivar el bot - ESTADO LIMPIO
+            session.botPaused = false;
+            session.conversationWithAgent = false;
+            session.agentHandoverInProgress = false;
+            session.flowActive = ''; // Limpiar cualquier flujo activo
+            session.crmConversationId = undefined;
+            session.advisorAttempts = 0;
+            session.lastActivity = new Date();
+
+            // Limpiar todos los flags de flujos específicos
+            session.changingPassword = false;
+            session.creatingTicket = false;
+            session.consultingInvoices = false;
+            session.upgradingPlan = false;
+            session.salesConversationStarted = false;
+            session.verifyingPayment = false;
+            session.contractingPlan = false;
+            session.diagnosticInProgress = false;
+            session.awaitingServiceSelection = false;            // Limpiar timeouts activos
+            if (session.agentResponseTimeout) {
+                clearTimeout(session.agentResponseTimeout);
+                session.agentResponseTimeout = undefined;
+            }
+            if (session.sessionTimeout) {
+                clearTimeout(session.sessionTimeout);
+                session.sessionTimeout = undefined;
+            }
+
+            // FORZAR actualización de la sesión
+            this.userSessions.set(phoneNumber, session);
+
+            console.log(`🔧 [CRM REACTIVATION] Estado después de limpieza:`, {
+                botPaused: session.botPaused,
+                conversationWithAgent: session.conversationWithAgent,
+                flowActive: session.flowActive,
+                crmConversationId: session.crmConversationId,
+                agentHandoverInProgress: session.agentHandoverInProgress
+            });
+
+            // Notificar al usuario con mensaje claro
+            await this.messageService.sendTextMessage(
+                phoneNumber,
+                '🤖 **Conversación con agente finalizada**\n\n' +
+                '✅ La conversación con nuestro agente ha terminado.\n' +
+                '🔄 El sistema automático está nuevamente activo y listo para ayudarte.\n\n' +
+                '📋 Escribe "menu" para ver todas las opciones disponibles\n' +
+                '� O escribe tu consulta directamente\n' +
+                '�👨‍💼 Si necesitas hablar nuevamente con un agente, escribe "agente"'
+            );
+
+            // Pequeña pausa para asegurar que el mensaje llegue
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Enviar mensaje de bienvenida del menú
+            await this.messageService.sendTextMessage(
+                phoneNumber,
+                '🎯 **¿En qué puedo ayudarte?**\n\n' +
+                '1️⃣ Información de servicios\n' +
+                '2️⃣ Estado de tu cuenta\n' +
+                '3️⃣ Facturas y pagos\n' +
+                '4️⃣ Soporte técnico\n' +
+                '5️⃣ Hablar con un agente\n\n' +
+                'Escribe el número de la opción o describe tu consulta 👆'
+            );
+
+            console.log(`✅ [CRM REACTIVATION] Bot reactivado exitosamente para ${phoneNumber} - Estado completamente limpio`);
+
+        } catch (error) {
+            console.error('❌ [CRM REACTIVATION] Error reactivando bot desde CRM:', error);
+            throw error;
+        }
     }
 }

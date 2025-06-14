@@ -25,10 +25,9 @@ export const config = {
     REDIS_PORT: parseInt(process.env.REDIS_PORT || '6379'),
     REDIS_PASSWORD: process.env.REDIS_PASSWORD || '',
     REDIS_DB: parseInt(process.env.REDIS_DB || '0'),
-    REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX || 'whatsapp_bot:',
-
-    // MongoDB Configuration
+    REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX || 'whatsapp_bot:',    // MongoDB Configuration
     MONGODB_URI: process.env.MONGODB_URI || '',
+    MONGODB_DB_NAME: process.env.MONGODB_DB_NAME || 'conectabot',
 
     // WispHub API Configuration
     WISPHUB_API_URL: process.env.WISPHUB_API_URL || '',

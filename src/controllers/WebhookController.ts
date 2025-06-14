@@ -9,13 +9,11 @@ export class WebhookController {
     private messageHandler: MessageHandler;
     private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
-    private messageService: MessageService;
-
-    constructor() {
-        this.messageHandler = new MessageHandler();
+    private messageService: MessageService; constructor() {
+        this.messageHandler = MessageHandler.getInstance();
         this.azureOpenAIService = new AzureOpenAIService();
         this.securityService = new SecurityService();
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
     }
 
     async verifyWebhook(req: Request, res: Response): Promise<void> {
@@ -48,7 +46,9 @@ export class WebhookController {
             console.error('Error in webhook verification:', error);
             res.status(500).send('Internal Server Error');
         }
-    } async handleWebhook(req: Request, res: Response): Promise<void> {
+    }
+
+    async handleWebhook(req: Request, res: Response): Promise<void> {
         try {
             const body = req.body as {
                 object: string;
@@ -220,10 +220,8 @@ export class WebhookController {
                 control_passed: {
                     metadata: metadata
                 }
-            };
-
-            // Utilizar el método estático de AgentHandoverFlow para procesar el evento
-            const messageService = new MessageService();
+            };            // Utilizar el método estático de AgentHandoverFlow para procesar el evento
+            const messageService = MessageService.getInstance();
             await AgentHandoverFlow.processHandoverEvent(handoverEvent, messageService);
 
         } catch (error) {
