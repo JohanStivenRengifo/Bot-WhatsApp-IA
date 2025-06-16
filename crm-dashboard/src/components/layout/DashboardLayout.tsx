@@ -37,17 +37,15 @@ import { useRealTimeMetrics, useWebSocketEvents } from '../../hooks/useApi';
 
 const drawerWidth = 240;
 
-const menuItems = [
-  { text: 'Dashboard', icon: DashboardIcon, path: '/dashboard' },
-  { text: 'Conversaciones', icon: ChatIcon, path: '/dashboard/conversations' },
-  { text: 'Agentes', icon: PeopleIcon, path: '/dashboard/agents' },
-  { text: 'Analytics', icon: AnalyticsIcon, path: '/dashboard/analytics' },
+const menuItems = [  { text: 'Dashboard', icon: DashboardIcon, path: '/crm-dashboard' },
+  { text: 'Conversaciones', icon: ChatIcon, path: '/crm-dashboard/conversations' },
+  { text: 'Agentes', icon: PeopleIcon, path: '/crm-dashboard/agents' },
+  { text: 'Analytics', icon: AnalyticsIcon, path: '/crm-dashboard/analytics' },
   {
     text: 'Control del Bot',
-    icon: SmartToyIcon,
-    path: '/dashboard/bot-control',
+    icon: SmartToyIcon,    path: '/crm-dashboard/bot-control',
   },
-  { text: 'Configuración', icon: SettingsIcon, path: '/dashboard/settings' },
+  { text: 'Configuración', icon: SettingsIcon, path: '/crm-dashboard/settings' },
 ];
 
 const DashboardLayout: React.FC = () => {

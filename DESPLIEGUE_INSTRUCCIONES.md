@@ -16,7 +16,7 @@ Install Command: npm install
 Después del despliegue exitoso, las URLs serán:
 
 - **🏠 Página Principal**: `https://tu-dominio.vercel.app/` (redirige al dashboard)
-- **💼 CRM Dashboard**: `https://tu-dominio.vercel.app/dashboard/`
+- **💼 CRM Dashboard**: `https://tu-dominio.vercel.app/crm-dashboard/`
 - **🤖 API Bot**: `https://tu-dominio.vercel.app/api/*`
 - **📞 Webhook WhatsApp**: `https://tu-dominio.vercel.app/webhook/*`
 - **⚡ API CRM**: `https://tu-dominio.vercel.app/crm/*`

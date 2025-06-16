@@ -110,7 +110,7 @@ const ConversationsPage: React.FC = () => {
   };
 
   const handleViewConversation = (conversationId: string) => {
-    navigate(`/dashboard/conversations/${conversationId}`);
+    navigate(`/crm-dashboard/conversations/${conversationId}`);
   };
 
   const formatTime = (dateString: string) => {

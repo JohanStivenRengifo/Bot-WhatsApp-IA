@@ -28,20 +28,12 @@
       "dest": "/api/src/index.ts"
     },
     {
-      "src": "/dashboard/assets/(.*)",
-      "dest": "/crm-dashboard/dist/assets/$1"
-    },
-    {
-      "src": "/dashboard/(.*)",
-      "dest": "/crm-dashboard/dist/$1"
-    },
-    {
-      "src": "/dashboard",
-      "dest": "/crm-dashboard/dist/index.html"
-    },
-    {
       "src": "/",
-      "dest": "/crm-dashboard/dist/index.html"
+      "dest": "/crm-dashboard/index.html"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/crm-dashboard/$1"
     }
   ]
 }

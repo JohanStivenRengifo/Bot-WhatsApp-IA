@@ -119,7 +119,7 @@ const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     );
   }
 
-  return !isAuthenticated ? <>{children}</> : <Navigate to="/dashboard" />;
+  return !isAuthenticated ? <>{children}</> : <Navigate to="/crm-dashboard" />;
 };
 
 function App() {
@@ -143,7 +143,7 @@ function App() {
 
                 {/* Rutas protegidas */}
                 <Route
-                  path="/dashboard"
+                  path="/crm-dashboard"
                   element={
                     <ProtectedRoute>
                       <DashboardLayout />
@@ -163,8 +163,8 @@ function App() {
                 </Route>
 
                 {/* Redireccionamiento por defecto */}
-                <Route path="/" element={<Navigate to="/dashboard" />} />
-                <Route path="*" element={<Navigate to="/dashboard" />} />
+                <Route path="/" element={<Navigate to="/crm-dashboard" />} />
+                <Route path="*" element={<Navigate to="/crm-dashboard" />} />
               </Routes>
             </Router>
           </SettingsProvider>
