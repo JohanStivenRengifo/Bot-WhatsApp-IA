@@ -1,39 +1,30 @@
 {
   "version": 2,
   "name": "bot-whatsapp-conecta2",
-  "builds": [
-    {
-      "src": "src/index.ts",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "crm-dashboard/package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "crm-dashboard/dist"
-      }
+  "buildCommand": "npm run vercel-build",
+  "outputDirectory": "crm-dashboard/dist",
+  "installCommand": "npm install && cd crm-dashboard && npm install",
+  "functions": {
+    "src/index.ts": {
+      "runtime": "nodejs18.x"
     }
-  ],
+  },
   "rewrites": [
     {
-      "source": "/dashboard/(.*)",
-      "destination": "/crm-dashboard/dist/$1"
-    },
-    {
-      "source": "/dashboard",
-      "destination": "/crm-dashboard/dist/index.html"
-    },
-    {
       "source": "/api/(.*)",
-      "destination": "/src/index.ts"
+      "destination": "/api/src/index"
     },
     {
       "source": "/webhook/(.*)",
-      "destination": "/src/index.ts"
+      "destination": "/api/src/index"
     },
     {
       "source": "/crm/(.*)",
-      "destination": "/src/index.ts"
+      "destination": "/api/src/index"
+    },
+    {
+      "source": "/((?!api).*)",
+      "destination": "/$1"
     }
   ],
   "headers": [
