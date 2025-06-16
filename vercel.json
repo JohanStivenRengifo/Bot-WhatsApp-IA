@@ -1,49 +1,35 @@
 {
   "version": 2,
   "name": "bot-whatsapp-conecta2",
-  "buildCommand": "npm run vercel-build",
-  "outputDirectory": "crm-dashboard/dist",
-  "installCommand": "npm install && cd crm-dashboard && npm install",
-  "functions": {
-    "src/index.ts": {
-      "runtime": "nodejs18.x"
-    }
-  },
-  "rewrites": [
+  "builds": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/src/index"
+      "src": "api/src/index.ts",
+      "use": "@vercel/node"
     },
     {
-      "source": "/webhook/(.*)",
-      "destination": "/api/src/index"
-    },
-    {
-      "source": "/crm/(.*)",
-      "destination": "/api/src/index"
-    },
-    {
-      "source": "/((?!api).*)",
-      "destination": "/$1"
+      "src": "crm-dashboard/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
     }
   ],
-  "headers": [
+  "routes": [
     {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "X-Requested-With, Content-Type, Accept, Authorization"
-        }
-      ]
+      "src": "/api/(.*)",
+      "dest": "/api/src/index.ts"
+    },
+    {
+      "src": "/webhook/(.*)",
+      "dest": "/api/src/index.ts"
+    },
+    {
+      "src": "/crm/(.*)",
+      "dest": "/api/src/index.ts"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/crm-dashboard/dist/$1"
     }
   ]
 }
