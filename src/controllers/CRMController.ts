@@ -29,7 +29,7 @@ export class CRMController {
     private ticketService: TicketService;
 
     constructor() {
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
         this.ticketService = new TicketService();
     }
 

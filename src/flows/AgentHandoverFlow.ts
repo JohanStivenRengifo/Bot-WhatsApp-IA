@@ -3,6 +3,7 @@ import { User, SessionData, WhatsAppMessage, WhatsAppHandoverEvent } from '../in
 import { MessageService } from '../services/MessageService';
 import { SecurityService } from '../services/SecurityService';
 import { TicketService } from '../services/TicketService';
+import { CRMServiceMongoDB } from '../services/CRMServiceMongoDB';
 import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 
 /**
@@ -11,6 +12,7 @@ import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
  */
 export class AgentHandoverFlow extends BaseConversationFlow {
     readonly name = 'AgentHandoverFlow';
+    private crmService: CRMServiceMongoDB;
 
     constructor(
         messageService: MessageService,
@@ -18,6 +20,7 @@ export class AgentHandoverFlow extends BaseConversationFlow {
         private ticketService: TicketService
     ) {
         super(messageService, securityService);
+        this.crmService = CRMServiceMongoDB.getInstance();
     } async canHandle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
         // Solo manejar mensajes de texto para este flujo
         if (typeof message !== 'string') return false;
@@ -28,21 +31,46 @@ export class AgentHandoverFlow extends BaseConversationFlow {
         }
 
         const extractedCommand = extractMenuCommand(message);
+        const messageLower = message.toLowerCase().trim();
 
-        // Verificar comandos directos
+        // PRIORIDAD ALTA: Comandos directos de agente
         if (extractedCommand === 'hablar_agente' || extractedCommand === 'agente' || extractedCommand === 'soporte_humano') {
+            console.log(`🎯 AgentHandoverFlow: Comando directo detectado: ${extractedCommand}`);
             return true;
         }
 
+        // Detectar múltiples intentos de "asesor"
+        if (messageLower.includes('asesor')) {
+            if (!session.advisorAttempts) {
+                session.advisorAttempts = 0;
+            }
+            session.advisorAttempts++;
+
+            console.log(`🔄 AgentHandoverFlow: Intento de "asesor" #${session.advisorAttempts}`);
+
+            // Después de 2 intentos de "asesor", activar handover automáticamente
+            if (session.advisorAttempts >= 2) {
+                console.log('🚀 AgentHandoverFlow: Activando handover automático por múltiples intentos de "asesor"');
+                return true;
+            }
+        }
+
         // Verificar keywords relacionadas con agente humano
-        return isMenuCommand(message, [
+        const agentKeywords = [
             'hablar con agente', 'hablar agente', 'agente humano', 'soporte humano',
             'persona real', 'operador', 'representante', 'asesor',
-            'help', 'ayuda urgente', 'escalation', 'escalar'
-        ]);
-    }
+            'help', 'ayuda urgente', 'escalation', 'escalar', 'contactar agente'
+        ];
 
-    async handle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
+        for (const keyword of agentKeywords) {
+            if (messageLower.includes(keyword)) {
+                console.log(`🎯 AgentHandoverFlow: Keyword detectado: "${keyword}"`);
+                return true;
+            }
+        }
+
+        return false;
+    } async handle(user: User, message: string | WhatsAppMessage, session: SessionData): Promise<boolean> {
         // Solo procesar mensajes de texto
         if (typeof message !== 'string') return false;
 
@@ -51,6 +79,21 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             if (!user.authenticated) {
                 await this.handleUnauthenticatedUser(user);
                 return true;
+            }
+
+            const messageLower = message.toLowerCase().trim();
+
+            // Caso especial: múltiples intentos de "asesor"
+            if (messageLower.includes('asesor') && session.advisorAttempts && session.advisorAttempts >= 2) {
+                await this.messageService.sendTextMessage(
+                    user.phoneNumber,
+                    '🎯 **Entiendo que necesitas hablar con un asesor.**\n\n' +
+                    '🚀 **Te estoy conectando inmediatamente con nuestro equipo humano.**\n\n' +
+                    '⏳ **Por favor espera un momento...**'
+                );
+
+                // Limpiar contador después de manejar el caso
+                session.advisorAttempts = 0;
             }
 
             // Iniciar proceso de handover
@@ -84,27 +127,127 @@ export class AgentHandoverFlow extends BaseConversationFlow {
      * Inicia el proceso de transferencia a agente humano
      */
     private async initiateAgentHandover(user: User, session: SessionData): Promise<void> {
-        // Marcar sesión como en proceso de handover
-        session.agentHandoverInProgress = true;
-        session.handoverStartTime = new Date();
+        try {
+            // Marcar sesión como en proceso de handover
+            session.agentHandoverInProgress = true;
+            session.handoverStartTime = new Date();
+            session.botPaused = true; // PAUSAR EL BOT
+            session.conversationWithAgent = true;
 
-        // Obtener información del usuario para el agente
-        const userInfo = await this.getUserContextForAgent(user);
+            // Obtener información del usuario para el agente
+            const userInfo = await this.getUserContextForAgent(user);
 
-        // Crear ticket de handover para tracking
-        const handoverTicketId = await this.createHandoverTicket(user, userInfo);
+            // Crear conversación en el CRM MongoDB
+            const conversationId = await this.createCRMConversation(user, userInfo);
 
-        // Enviar mensaje de confirmación al usuario
-        await this.sendHandoverConfirmation(user, handoverTicketId);
+            // Guardar el ID de conversación en la sesión
+            session.crmConversationId = conversationId;
 
-        // Notificar al sistema CRM (preparado para implementación futura)
-        await this.notifyAgentSystem(user, userInfo, handoverTicketId);
+            // Enviar mensaje de confirmación al usuario
+            await this.sendHandoverConfirmation(user, conversationId);
 
-        // Iniciar protocolo de handover con Meta API
-        await this.executeMetaHandoverProtocol(user, handoverTicketId);
+            // Notificar al CRM sobre la nueva conversación
+            await this.notifyCRMSystem(user, userInfo, conversationId);
 
-        // Limpiar estado de flujo activo después del handover
-        session.flowActive = '';
+            // Limpiar estado de flujo activo después del handover
+            session.flowActive = '';
+
+            console.log(`✅ Handover completado - Bot PAUSADO - Conversación CRM: ${conversationId}`);
+
+        } catch (error) {
+            console.error('❌ Error en handover:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Crea una conversación en el CRM MongoDB
+     */
+    private async createCRMConversation(user: User, userInfo: object): Promise<string> {
+        try {
+            // Obtener nombre del usuario
+            let customerName = 'Cliente';
+            if (user.encryptedData) {
+                try {
+                    const decryptedData = JSON.parse(this.securityService.decryptSensitiveData(user.encryptedData));
+                    customerName = decryptedData.customerName || 'Cliente';
+                } catch (error) {
+                    console.error('Error al decodificar datos del usuario:', error);
+                }
+            }            // Crear conversación en MongoDB usando CRMServiceMongoDB
+            const conversation = await this.crmService.createConversation(
+                user.phoneNumber,
+                customerName
+            );
+
+            console.log(`✅ Conversación CRM creada: ${conversation.id}`);
+
+            // Crear mensaje inicial del handover
+            await this.crmService.saveMessage({
+                conversationId: conversation.id!,
+                content: `👨‍💼 El usuario solicitó hablar con un agente humano`,
+                messageType: 'system',
+                fromNumber: user.phoneNumber,
+                toNumber: 'system',
+                isFromBot: true,
+                isFromCustomer: false,
+                aiProcessed: false,
+                timestamp: new Date(),
+                metadata: {
+                    type: 'handover_request',
+                    originalMessage: 'Hablar con Agente',
+                    customerName: customerName,
+                    phoneNumber: user.phoneNumber
+                }
+            });
+
+            console.log(`✅ Mensaje inicial creado para conversación: ${conversation.id}`);
+
+            return conversation.id!;
+
+        } catch (error) {
+            console.error('Error creando conversación CRM:', error);
+            throw error;
+        }
+    }    /**
+     * Notifica al CRM frontend sobre la nueva conversación
+     */
+    private async notifyCRMSystem(user: User, userInfo: object, conversationId: string): Promise<void> {
+        try {
+            console.log(`🔔 NOTIFICANDO AL CRM FRONTEND:`);
+            console.log(`📱 Cliente: ${user.phoneNumber}`);
+            console.log(`💬 Conversación ID: ${conversationId}`);
+            console.log(`📋 Contexto:`, userInfo);
+
+            // Preparar datos para el frontend
+            const notificationData = {
+                type: 'new_conversation',
+                conversationId,
+                phoneNumber: user.phoneNumber,
+                customerInfo: userInfo,
+                timestamp: new Date().toISOString(),
+                priority: 'normal',
+                source: 'whatsapp_handover',
+                message: `Nueva conversación de ${user.phoneNumber}`
+            };
+
+            // Enviar notificación en tiempo real al frontend CRM via WebSocket
+            try {
+                const { WebSocketService } = await import('../services/WebSocketService');
+                const wsService = WebSocketService.getInstance();
+                wsService.broadcastToRoom('crm-agents', 'new_conversation', notificationData);
+                console.log(`📡 Notificación WebSocket enviada a agentes CRM`);
+            } catch (wsError) {
+                console.error('Error enviando notificación WebSocket:', wsError);
+            }
+
+            // También registrar en logs para debugging
+            console.log(`✅ Conversación disponible en CRM dashboard - ID: ${conversationId}`);
+
+        } catch (error) {
+            console.error('Error notificando al CRM:', error);
+            // No relanzar el error para no fallar el handover
+        }
     }/**
      * Recopila información del usuario para el agente
      */
@@ -183,10 +326,10 @@ export class AgentHandoverFlow extends BaseConversationFlow {
         };
 
         return await this.ticketService.createTicket(ticketData);
-    }/**
+    }    /**
      * Envía confirmación de handover al usuario
      */
-    private async sendHandoverConfirmation(user: User, ticketId: string): Promise<void> {
+    private async sendHandoverConfirmation(user: User, conversationId: string): Promise<void> {
         const currentTime = new Date().toLocaleTimeString('es-CO', {
             hour: '2-digit',
             minute: '2-digit'
@@ -202,13 +345,13 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             confirmationMessage =
                 `👨‍💼 **CONECTANDO CON AGENTE - SERVICIO SUSPENDIDO**\n\n` +
                 `⚠️ **Tu servicio requiere reactivación**\n` +
-                `🎫 **Ticket:** #${ticketId}\n` +
+                `💬 **Conversación:** #${conversationId}\n` +
                 `⏰ **Hora:** ${currentTime}\n\n` +
                 `🔄 **¿Qué sigue?**\n` +
                 `• Un agente especializado en reactivaciones te contactará\n` +
                 `• Revisará tu cuenta y opciones de pago\n` +
                 `• Te ayudará a reactivar tu servicio\n` +
-                `• Mantén esta conversación abierta\n\n` +
+                `• Tu conversación está ahora en nuestro sistema CRM\n\n` +
                 `📞 **¿Es urgente?** Llama al **3242156679**\n\n` +
                 `⏳ **Tiempo estimado de respuesta:** 5-10 minutos\n` +
                 `(En horario laboral: Lun-Vie 8:00-18:00, Sáb 8:00-12:00)`;
@@ -216,11 +359,12 @@ export class AgentHandoverFlow extends BaseConversationFlow {
             confirmationMessage =
                 `👨‍💼 **CONECTANDO CON AGENTE HUMANO**\n\n` +
                 `✅ **Tu solicitud ha sido procesada**\n` +
-                `🎫 **Ticket:** #${ticketId}\n` +
+                `💬 **Conversación:** #${conversationId}\n` +
                 `⏰ **Hora:** ${currentTime}\n\n` +
                 `🔄 **¿Qué sigue?**\n` +
                 `• Un agente será notificado inmediatamente\n` +
-                `• Te contactará en los próximos minutos\n` +
+                `• Te contactará a través del sistema CRM\n` +
+                `• Tu conversación está registrada y disponible\n` +
                 `• Mantén esta conversación abierta\n\n` +
                 `📞 **¿Es urgente?** Llama al **3242156679**\n\n` +
                 `⏳ **Tiempo estimado de respuesta:** 5-10 minutos\n` +

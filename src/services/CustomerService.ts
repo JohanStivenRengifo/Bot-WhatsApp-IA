@@ -52,33 +52,75 @@ export class CustomerService {    /**
             console.error('Error en autenticación de cliente:', error);
             return null;
         }
-    }
-
-    /**
+    }    /**
      * Busca un cliente por ID de servicio directamente
      */
     private async searchByServiceId(serviceId: string): Promise<CustomerData | null> {
         try {
             console.log(`🔍 Buscando por ID de servicio: ${serviceId}`);
 
-            // Intentar acceder directamente al servicio por ID
-            const serviceResponse = await axios.get(`${config.wisphub.baseUrl}clientes/${serviceId}`, {
-                headers: { 'Authorization': config.wisphub.apiKey }
+            // Primero intentar buscar usando el parámetro id_servicio en la lista de clientes
+            let searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes/`, {
+                headers: { 'Authorization': config.wisphub.apiKey },
+                params: { id_servicio: serviceId, limit: 10 }
             });
 
-            if (serviceResponse.data && serviceResponse.data.id_servicio) {
-                const cliente = serviceResponse.data;
+            // Si no se encuentra, intentar acceso directo al endpoint del cliente específico
+            if (!searchResponse.data?.results?.length) {
+                console.log(`🔍 No encontrado en lista, intentando acceso directo al servicio: ${serviceId}`);
+                try {
+                    const serviceResponse = await axios.get(`${config.wisphub.baseUrl}clientes/${serviceId}/`, {
+                        headers: { 'Authorization': config.wisphub.apiKey }
+                    });
 
+                    if (serviceResponse.data && serviceResponse.data.id_servicio) {
+                        const cliente = serviceResponse.data;
+
+                        // Verificar estado del servicio
+                        const estadoServicio = cliente.estado?.toLowerCase();
+                        const isActive = estadoServicio === 'activo' || estadoServicio === 'active' || estadoServicio === '1';
+
+                        console.log(`📋 Servicio encontrado: ${cliente.nombre || 'Sin nombre'} - Estado: ${cliente.estado}`);
+
+                        // Mapear la respuesta al formato CustomerData
+                        const customerData: CustomerData = {
+                            id: cliente.id_servicio,
+                            name: cliente.nombre?.trim() || cliente.id_servicio || 'Cliente',
+                            email: cliente.email || '',
+                            document: cliente.cedula || '',
+                            ip_address: cliente.ip || '',
+                            status: cliente.estado || 'unknown',
+                            isInactive: !isActive
+                        };
+
+                        console.log(`✅ Cliente procesado: ${customerData.name} (ID: ${customerData.id})`);
+                        return customerData;
+                    }
+                } catch (directError) {
+                    if (axios.isAxiosError(directError) && directError.response?.status === 404) {
+                        console.log(`🔍 No se encontró servicio con ID: ${serviceId} (404)`);
+                    } else {
+                        console.error(`Error en acceso directo al servicio:`, directError);
+                    }
+                }
+                return null;
+            }
+
+            // Si se encontró en la lista de clientes
+            const cliente = searchResponse.data.results[0];
+            if (cliente && cliente.id_servicio) {
                 // Verificar estado del servicio
                 const estadoServicio = cliente.estado?.toLowerCase();
-                const isActive = estadoServicio === 'activo' || estadoServicio === 'active'; console.log(`📋 Servicio encontrado: ${cliente.nombre || 'Sin nombre'} - Estado: ${cliente.estado}`);
+                const isActive = estadoServicio === 'activo' || estadoServicio === 'active' || estadoServicio === '1';
+
+                console.log(`📋 Servicio encontrado en lista: ${cliente.nombre || 'Sin nombre'} - Estado: ${cliente.estado}`);
 
                 // Mapear la respuesta al formato CustomerData
                 const customerData: CustomerData = {
                     id: cliente.id_servicio,
                     name: cliente.nombre?.trim() || cliente.id_servicio || 'Cliente',
                     email: cliente.email || '',
-                    document: cliente.documento || cliente.cedula || '',
+                    document: cliente.cedula || '',
                     ip_address: cliente.ip || '',
                     status: cliente.estado || 'unknown',
                     isInactive: !isActive
@@ -101,9 +143,7 @@ export class CustomerService {    /**
             }
             return null;
         }
-    }
-
-    /**
+    }/**
      * Busca un cliente por número de cédula/documento
      */
     private async searchByDocument(documentNumber: string): Promise<CustomerData | null> {
@@ -114,18 +154,18 @@ export class CustomerService {    /**
             console.log(`🔎 URL API: ${config.wisphub.baseUrl}clientes`);
             console.log(`🔑 API Key: ${config.wisphub.apiKey}`);
 
-            // Primero intentamos buscar por el documento exacto
-            let searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes`, {
+            // Primero intentamos buscar por el documento exacto usando el parámetro 'cedula'
+            let searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes/`, {
                 headers: { 'Authorization': config.wisphub.apiKey },
-                params: { documento: documentNumber, limit: 20 }
+                params: { cedula: documentNumber, limit: 50 }
             });
 
-            // Si no encontramos resultados exactos, buscamos en todos los clientes
+            // Si no encontramos resultados exactos, buscamos con cedula__contains
             if (!searchResponse.data?.results?.length) {
-                console.log(`📊 No se encontraron coincidencias exactas por documento, realizando búsqueda amplia...`);
-                searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes`, {
+                console.log(`📊 No se encontraron coincidencias exactas por cedula, probando con cedula__contains...`);
+                searchResponse = await axios.get(`${config.wisphub.baseUrl}clientes/`, {
                     headers: { 'Authorization': config.wisphub.apiKey },
-                    params: { limit: 1000, search: documentNumber }
+                    params: { cedula__contains: documentNumber, limit: 50 }
                 });
             }
 
@@ -141,9 +181,9 @@ export class CustomerService {    /**
 
                     // Mostrar los primeros 5 documentos para depuración
                     const documentosEncontrados = clientesEncontrados
-                        .map(c => ({ documento: c.documento || c.cedula || 'Sin documento', nombre: c.nombre || 'Sin nombre' }))
+                        .map(c => ({ cedula: c.cedula || 'Sin cedula', nombre: c.nombre || 'Sin nombre', id_servicio: c.id_servicio }))
                         .slice(0, 5);
-                    console.log(`📋 Primeros documentos encontrados:`, JSON.stringify(documentosEncontrados, null, 2));
+                    console.log(`📋 Primeros clientes encontrados:`, JSON.stringify(documentosEncontrados, null, 2));
                 } else if (Array.isArray(searchResponse.data)) {
                     // Formato de array directo
                     clientesEncontrados = searchResponse.data;
@@ -165,7 +205,7 @@ export class CustomerService {    /**
 
             // Buscar coincidencia exacta de cédula
             const cliente = clientesEncontrados.find(c => {
-                const clienteDoc = (c.documento || c.cedula || '').toString().replace(/[^0-9]/g, '').trim();
+                const clienteDoc = (c.cedula || '').toString().replace(/[^0-9]/g, '').trim();
                 const coincidenciaExacta = clienteDoc === documentNumber;
 
                 if (coincidenciaExacta) {
@@ -179,10 +219,11 @@ export class CustomerService {    /**
             if (!cliente) {
                 const similarDocs = clientesEncontrados
                     .map(c => {
-                        const doc = (c.documento || c.cedula || '').toString().replace(/[^0-9]/g, '').trim();
+                        const doc = (c.cedula || '').toString().replace(/[^0-9]/g, '').trim();
                         return {
-                            documento: doc,
+                            cedula: doc,
                             nombre: c.nombre || 'Sin nombre',
+                            id_servicio: c.id_servicio,
                             similitud: doc.includes(documentNumber.slice(-4)) ? 'Alta' : 'Baja'
                         };
                     })

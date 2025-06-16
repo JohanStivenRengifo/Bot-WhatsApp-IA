@@ -1,8 +1,13 @@
 import express from 'express';
+import { createServer } from 'http';
+import cors from 'cors';
 import { config, validateEnvironment } from './config';
 import routes from './routes';
 import { NotificationController } from './controllers';
 import { User } from './interfaces';
+import { WebSocketService } from './services/WebSocketService';
+import { MongoDBService } from './services/MongoDBService';
+import { CRMServiceMongoDB } from './services/CRMServiceMongoDB';
 
 // Define interface for request with rawBody
 interface RequestWithRawBody extends express.Request {
@@ -11,10 +16,20 @@ interface RequestWithRawBody extends express.Request {
 
 class WhatsAppBot {
     private app: express.Application;
+    private server: any;
+    private webSocketService: WebSocketService;
     private users: Map<string, User> = new Map();
 
     constructor() {
         this.app = express();
+        this.server = createServer(this.app);
+        this.webSocketService = WebSocketService.getInstance();
+
+        // Configuración CORS para el frontend
+        this.app.use(cors({
+            origin: process.env.FRONTEND_URL || "http://localhost:5173",
+            credentials: true
+        }));
 
         // Configuración del middleware
         this.app.use(express.json({
@@ -30,6 +45,9 @@ class WhatsAppBot {
             console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
             next();
         });
+
+        // Inicializar WebSocket
+        this.webSocketService.initialize(this.server);
 
         this.setupRoutes();
     }
@@ -48,31 +66,73 @@ class WhatsAppBot {
             console.log(`404 - Not Found: ${req.method} ${req.path}`);
             res.status(404).json({ error: 'Not Found' });
         });
+    } public getApp(): express.Application {
+        return this.app;
     }
 
-    public start(port: number = config.server.port): void {
+    public async start(port: number = config.server.port): Promise<void> {
         validateEnvironment();
 
-        this.app.listen(port, () => {
-            console.log(`🤖 Conecta2 WhatsApp Bot running on port ${port}`);
-            console.log(`📱 Webhook URL: http://localhost:${port}/webhook`);
-            console.log(`🔑 Verify Token: ${config.meta.webhookVerifyToken}`);
+        try {
+            // Conectar a MongoDB
+            const mongoService = MongoDBService.getInstance();
+            await mongoService.connect();
 
-            // Start notification system
-            const notificationController = new NotificationController(this.users);
-            notificationController.startNotificationSystem();
-        });
+            // Inicializar CRM Service
+            const crmService = CRMServiceMongoDB.getInstance();
+            console.log('✅ CRM Service MongoDB inicializado');
+
+            this.server.listen(port, () => {
+                console.log(`🤖 Conecta2 WhatsApp Bot running on port ${port}`);
+                console.log(`📱 Webhook URL: http://localhost:${port}/webhook`);
+                console.log(`🔑 Verify Token: ${config.meta.webhookVerifyToken}`);
+                console.log(`🌐 WebSocket server running on port ${port}`);
+                console.log(`🎛️ CRM Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
+                console.log(`🗄️ MongoDB conectado: ${config.MONGODB_DB_NAME}`);
+
+                // Start notification system
+                const notificationController = new NotificationController(this.users);
+                notificationController.startNotificationSystem();
+            });
+
+        } catch (error) {
+            console.error('❌ Error conectando a MongoDB:', error);
+            process.exit(1);
+        }
     }
 }
 
 // Initialize and start the bot
-try {
-    validateEnvironment();
-    const bot = new WhatsAppBot();
-    bot.start();
-} catch (error) {
-    console.error('❌ Failed to start bot:', error);
-    process.exit(1);
+async function startBot() {
+    try {
+        validateEnvironment();
+        const bot = new WhatsAppBot();
+        await bot.start();
+    } catch (error) {
+        console.error('❌ Failed to start bot:', error);
+        process.exit(1);
+    }
 }
 
-export default WhatsAppBot;
+// For Vercel serverless deployment, export the app instance
+const bot = new WhatsAppBot();
+
+// Initialize MongoDB connection
+(async () => {
+    try {
+        const mongoService = MongoDBService.getInstance();
+        await mongoService.connect();
+        const crmService = CRMServiceMongoDB.getInstance();
+        console.log('✅ CRM Service MongoDB inicializado para Vercel');
+    } catch (error) {
+        console.error('❌ Error conectando a MongoDB en Vercel:', error);
+    }
+})();
+
+// Start bot locally if not in serverless environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    startBot();
+}
+
+// Export the Express app for Vercel
+export default bot.getApp();

@@ -35,6 +35,14 @@ export class TicketCreationFlow extends BaseConversationFlow {
 
         // Normalizar el mensaje para facilitar la comparación
         const extractedCommand = extractMenuCommand(message);
+        const messageLower = message.toLowerCase().trim();
+
+        // NO interceptar comandos de agente (estos deben ir a AgentHandoverFlow)
+        if (extractedCommand === 'hablar_agente' || extractedCommand === 'agente' ||
+            messageLower.includes('asesor') || messageLower.includes('agente') ||
+            messageLower.includes('hablar con agente')) {
+            return false;
+        }
 
         // Este flujo maneja:
         // 1. Cuando se selecciona "Crear Ticket" del menú de soporte
@@ -434,12 +442,11 @@ export class TicketCreationFlow extends BaseConversationFlow {
      * Maneja la respuesta del usuario a los consejos de autoayuda (Primera ronda)
      */
     private async handleSelfHelpResponse(user: User, message: string, session: SessionData): Promise<boolean> {
-        const messageText = message.toLowerCase().trim();
-
-        // Detectar respuesta por ID de botón o texto
+        const messageText = message.toLowerCase().trim();        // Detectar respuesta por ID de botón o texto (incluyendo emojis)
         if (messageText.includes('problem_solved') || messageText.includes('solucionado') ||
             messageText.includes('resuelto') || messageText.includes('funciona') ||
-            messageText.includes('se solucionó')) {
+            messageText.includes('se solucionó') || messageText.includes('🎉') ||
+            messageText.includes('funcionó') || messageText.includes('ya funciona')) {
             // El problema se resolvió
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '🎉 **¡Fantástico! Me alegra saber que se resolvió tu problema.**\n\n' +
@@ -448,10 +455,9 @@ export class TicketCreationFlow extends BaseConversationFlow {
 
             this.resetTicketSession(session);
             return true;
-        }
-
-        if (messageText.includes('tried_no') || messageText.includes('no') ||
-            messageText.includes('no los he probado') || messageText.includes('no he probado')) {
+        } if (messageText.includes('tried_no') || messageText.includes('no') ||
+            messageText.includes('no los he probado') || messageText.includes('no he probado') ||
+            messageText.includes('❌') || messageText.includes('no los probé')) {
             // El usuario no ha probado los consejos
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '👍 **¡Perfecto! Vamos a intentar resolver tu problema.**\n\n' +
@@ -502,10 +508,9 @@ export class TicketCreationFlow extends BaseConversationFlow {
             await this.messageService.sendMessage(waitingButtons);
             session.step = 'self_help_step2';
             return true;
-        }
-
-        if (messageText.includes('tried_yes') || messageText.includes('sí') || messageText.includes('si') ||
-            messageText.includes('los probé') || messageText.includes('ya probé')) {
+        } if (messageText.includes('tried_yes') || messageText.includes('sí') || messageText.includes('si') ||
+            messageText.includes('los probé') || messageText.includes('ya probé') ||
+            messageText.includes('✅') || messageText.includes('ya intenté')) {
             // El usuario ya probó pero el problema persiste - Segunda ronda
             const advancedTips = this.getAdvancedSelfHelpTips(session.category!);
 
@@ -556,14 +561,19 @@ export class TicketCreationFlow extends BaseConversationFlow {
                 }
             };
 
-            await this.messageService.sendMessage(secondStepButtons);
-            session.step = 'self_help_step2';
+            await this.messageService.sendMessage(secondStepButtons); session.step = 'self_help_step2';
             return true;
         }
 
-        // Respuesta no reconocida
+        // Respuesta no reconocida - dar más opciones al usuario
         await this.messageService.sendTextMessage(user.phoneNumber,
-            '❓ No entendí tu respuesta. Por favor usa los botones para seleccionar una opción.');
+            '🤔 **No reconocí tu respuesta.**\n\n' +
+            '💡 **Puedes:**\n' +
+            '• Usar los botones que aparecen arriba\n' +
+            '• Escribir **"menu"** para volver al menú principal\n' +
+            '• Escribir **"sí"** si ya probaste los pasos\n' +
+            '• Escribir **"no"** si no los has probado\n' +
+            '• Escribir **"funcionó"** si se resolvió tu problema');
 
         return true;
     }
@@ -572,10 +582,10 @@ export class TicketCreationFlow extends BaseConversationFlow {
      * Maneja la segunda ronda de autoayuda
      */
     private async handleSelfHelpStep2(user: User, message: string, session: SessionData): Promise<boolean> {
-        const messageText = message.toLowerCase().trim();
-
-        if (messageText.includes('steps_worked') || messageText.includes('advanced_worked') ||
-            messageText.includes('funcionó') || messageText.includes('ahora funciona')) {
+        const messageText = message.toLowerCase().trim(); if (messageText.includes('steps_worked') || messageText.includes('advanced_worked') ||
+            messageText.includes('funcionó') || messageText.includes('ahora funciona') ||
+            messageText.includes('✅') || messageText.includes('ya funciona') ||
+            messageText.includes('se arregló') || messageText.includes('solucionó')) {
             // El problema se resolvió en la segunda ronda
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '🎉 **¡Excelente! Me alegra que hayas podido resolver el problema.**\n\n' +
@@ -585,11 +595,11 @@ export class TicketCreationFlow extends BaseConversationFlow {
 
             this.resetTicketSession(session);
             return true;
-        }
-
-        if (messageText.includes('steps_failed') || messageText.includes('still_broken') ||
+        } if (messageText.includes('steps_failed') || messageText.includes('still_broken') ||
             messageText.includes('sigue sin funcionar') || messageText.includes('aún no funciona') ||
-            messageText.includes('too_complex') || messageText.includes('es muy complejo')) {
+            messageText.includes('too_complex') || messageText.includes('es muy complejo') ||
+            messageText.includes('❌') || messageText.includes('no funciona') ||
+            messageText.includes('sigue igual') || messageText.includes('nada')) {
             // El problema persiste después de dos rondas
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '😔 **Entiendo tu frustración. Has intentado resolver el problema por tu cuenta.**\n\n' +
@@ -641,7 +651,9 @@ export class TicketCreationFlow extends BaseConversationFlow {
             return true;
         }
 
-        if (messageText.includes('need_help') || messageText.includes('necesito ayuda')) {
+        if (messageText.includes('need_help') || messageText.includes('necesito ayuda') ||
+            messageText.includes('❓') || messageText.includes('no entiendo') ||
+            messageText.includes('ayuda') || messageText.includes('explicar')) {
             // El usuario necesita ayuda con los pasos
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '🤝 **¡Por supuesto! Te ayudo a entender mejor los pasos.**\n\n' +
@@ -695,28 +707,31 @@ export class TicketCreationFlow extends BaseConversationFlow {
                 '⏰ Cuando termines, vuelve y cuéntame cómo te fue escribiendo **"funcionó"** o **"no funcionó"**.');
 
             return true;
-        }
-
-        if (messageText.includes('still_complex') || messageText.includes('aún es complejo')) {
+        } if (messageText.includes('still_complex') || messageText.includes('aún es complejo')) {
             // Es muy complejo, ir directo a crear ticket
             session.step = 'problem_persists';
             return await this.handleProblemPersists(user, 'create_report', session);
         }
 
-        // Respuesta no reconocida
+        // Respuesta no reconocida - dar opciones más claras
         await this.messageService.sendTextMessage(user.phoneNumber,
-            '❓ No entendí tu respuesta. Por favor usa los botones para seleccionar una opción.');
+            '🤔 **No reconocí tu respuesta.**\n\n' +
+            '💡 **Puedes escribir:**\n' +
+            '• **"funcionó"** si los pasos resolvieron tu problema\n' +
+            '• **"no funcionó"** si sigues teniendo problemas\n' +
+            '• **"es complejo"** si necesitas ayuda con los pasos\n' +
+            '• **"menu"** para volver al menú principal');
 
         return true;
     }
 
     /**
      * Maneja cuando el problema persiste y es necesario crear ticket
-     */
-    private async handleProblemPersists(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    private async handleProblemPersists(user: User, message: string, session: SessionData): Promise<boolean> {
         const messageText = message.toLowerCase().trim();
 
-        if (messageText.includes('create_report') || messageText.includes('crear reporte')) {
+        if (messageText.includes('create_report') || messageText.includes('crear reporte') ||
+            messageText.includes('📝 crear reporte')) {
             // Proceder a crear el ticket
             session.step = 'description';
             await this.messageService.sendTextMessage(user.phoneNumber,
@@ -730,7 +745,8 @@ export class TicketCreationFlow extends BaseConversationFlow {
             return true;
         }
 
-        if (messageText.includes('try_later') || messageText.includes('intentaré después')) {
+        if (messageText.includes('try_later') || messageText.includes('intentaré después') ||
+            messageText.includes('⏰ después') || messageText.includes('después')) {
             // Usuario quiere intentar después
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '⏰ **Perfecto, tómate tu tiempo.**\n\n' +
@@ -739,11 +755,17 @@ export class TicketCreationFlow extends BaseConversationFlow {
                 '• **"menu"** - Para ver todas las opciones\n\n' +
                 '📞 **Si es urgente:** Puedes llamar al **3242156679**');
 
+            // Enviar botones de navegación después de posponer
+            await this.messageService.sendNavigationButtons(
+                user.phoneNumber,
+                '🕐 Puedes volver cuando quieras',
+                '¿Qué deseas hacer ahora?'
+            );
+
             this.resetTicketSession(session);
             return true;
-        }
-
-        if (messageText.includes('back_menu') || messageText.includes('volver al menú')) {
+        } if (messageText.includes('back_menu') || messageText.includes('volver al menú') ||
+            messageText.includes('🏠 volver al menú')) {
             // Volver al menú principal
             await this.messageService.sendTextMessage(user.phoneNumber,
                 '🏠 **Regresando al menú principal.**\n\n' +
@@ -753,12 +775,18 @@ export class TicketCreationFlow extends BaseConversationFlow {
             return true;
         }
 
-        // Respuesta no reconocida
+        // Respuesta no reconocida - dar opciones específicas para esta situación
         await this.messageService.sendTextMessage(user.phoneNumber,
-            '❓ No entendí tu respuesta. Por favor usa los botones para seleccionar una opción.');
+            '🤔 **No reconocí tu respuesta.**\n\n' +
+            '💡 **Puedes escribir:**\n' + '• **"crear reporte"** para reportar tu problema\n' +
+            '• **"después"** para intentar más tarde\n' +
+            '• **"menu"** para volver al menú principal\n' +
+            '• **"ayuda"** para hablar con un agente');
 
         return true;
-    }    /**
+    }
+
+    /**
      * Proporciona consejos básicos de autoayuda según la categoría del problema
      */
     private getSelfHelpTips(category: string): string {

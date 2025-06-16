@@ -1,21 +1,19 @@
 import { Request, Response } from 'express';
 import { config } from '../config';
 import { MessageHandler } from './MessageHandler';
-import { AIService, SecurityService, MessageService } from '../services';
+import { SecurityService, MessageService, AzureOpenAIService } from '../services';
 import { AgentHandoverFlow } from '../flows/AgentHandoverFlow';
 import { WhatsAppHandoverEvent } from '../interfaces/WhatsAppMessage';
 
 export class WebhookController {
     private messageHandler: MessageHandler;
-    private aiService: AIService;
+    private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
-    private messageService: MessageService;
-
-    constructor() {
-        this.messageHandler = new MessageHandler();
-        this.aiService = new AIService();
+    private messageService: MessageService; constructor() {
+        this.messageHandler = MessageHandler.getInstance();
+        this.azureOpenAIService = new AzureOpenAIService();
         this.securityService = new SecurityService();
-        this.messageService = new MessageService();
+        this.messageService = MessageService.getInstance();
     }
 
     async verifyWebhook(req: Request, res: Response): Promise<void> {
@@ -48,7 +46,9 @@ export class WebhookController {
             console.error('Error in webhook verification:', error);
             res.status(500).send('Internal Server Error');
         }
-    } async handleWebhook(req: Request, res: Response): Promise<void> {
+    }
+
+    async handleWebhook(req: Request, res: Response): Promise<void> {
         try {
             const body = req.body as {
                 object: string;
@@ -100,12 +100,10 @@ export class WebhookController {
             console.error('Error handling webhook:', error);
             res.status(500).send('Internal Server Error');
         }
-    }
-
-    async healthCheck(req: Request, res: Response): Promise<void> {
+    } async healthCheck(req: Request, res: Response): Promise<void> {
         try {
-            const aiStatus = await this.aiService.getServiceStatus();
-            const aiConfig = this.aiService.getCurrentConfiguration();
+            const aiStatus = await this.azureOpenAIService.getServiceStatus();
+            const aiConfig = this.azureOpenAIService.getCurrentConfiguration();
             const securityStats = this.securityService.getSecurityStats();
 
             res.json({
@@ -222,10 +220,8 @@ export class WebhookController {
                 control_passed: {
                     metadata: metadata
                 }
-            };
-
-            // Utilizar el método estático de AgentHandoverFlow para procesar el evento
-            const messageService = new MessageService();
+            };            // Utilizar el método estático de AgentHandoverFlow para procesar el evento
+            const messageService = MessageService.getInstance();
             await AgentHandoverFlow.processHandoverEvent(handoverEvent, messageService);
 
         } catch (error) {

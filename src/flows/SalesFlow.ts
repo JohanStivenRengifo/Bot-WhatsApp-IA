@@ -1,17 +1,17 @@
 import { User, SessionData } from '../interfaces';
 import { BaseConversationFlow } from './ConversationFlow';
-import { MessageService, SecurityService, AIService, CustomerService, TicketService } from '../services';
+import { MessageService, SecurityService, CustomerService, TicketService, AzureOpenAIService } from '../services';
 import { extractMenuCommand, isMenuCommand } from '../utils/messageUtils';
 import axios from 'axios';
 import { config } from '../config';
 
 /**
- * Flujo de ventas con IA avanzada
+ * Flujo de ventas con IA de Azure OpenAI
  */
 export class SalesFlow extends BaseConversationFlow {
     readonly name: string = 'sales';
 
-    private aiService: AIService;
+    private azureOpenAIService: AzureOpenAIService;
     private customerService: CustomerService;
     private ticketService: TicketService;
     private apiKey: string;
@@ -33,27 +33,37 @@ export class SalesFlow extends BaseConversationFlow {
         { id: 'combo_basico', name: 'Combo Básico', description: '30 Mbps + TV HD', originalPrice: 80000, comboPrice: 60000, discount: 20000 },
         { id: 'combo_standar', name: 'Combo Familiar', description: '50 Mbps + TV HD', originalPrice: 90000, comboPrice: 70000, discount: 20000 },
         { id: 'combo_premium', name: 'Combo Premium', description: '100 Mbps + TV HD', originalPrice: 120000, comboPrice: 100000, discount: 20000 }
-    ];
-
-    constructor(
+    ]; constructor(
         messageService: MessageService,
         securityService: SecurityService,
-        aiService: AIService,
         customerService: CustomerService
     ) {
         super(messageService, securityService);
-        this.aiService = aiService;
+        this.azureOpenAIService = new AzureOpenAIService();
         this.customerService = customerService;
         this.ticketService = new TicketService();
 
         // Configurar API key y URL para tickets
         this.apiKey = config.wisphub.apiKey || 'Api-Key mHHsEQKX.Uc1BQzXFOCXUno64ZTM9K4vaDPjH9gLq';
         this.apiUrl = config.wisphub.baseUrl + '/api/tickets/' || 'https://api.wisphub.app/api/tickets/';
-    }    /**
+    }/**
      * Verifica si este flujo debe manejar el mensaje actual
-     */
-    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    async canHandle(user: User, message: string, session: SessionData): Promise<boolean> {
         const extractedCommand = extractMenuCommand(message);
+
+        // Si acabamos de completar una contratación (últimos 2 minutos), manejar mensajes de cortesía
+        if ((session as any).contractCompletedAt) {
+            const timeSinceCompletion = Date.now() - (session as any).contractCompletedAt.getTime();
+            if (timeSinceCompletion < 120000) { // 2 minutos
+                const courtesyMessages = ['gracias', 'thank', 'ok', 'perfecto', 'excelente', 'muy bien', 'genial'];
+                if (courtesyMessages.some(word => message.toLowerCase().includes(word))) {
+                    return true;
+                }
+            } else {
+                // Limpiar el estado después de 2 minutos
+                delete (session as any).contractCompletedAt;
+            }
+        }
 
         // Si estamos en proceso de contratación, este flujo debe manejar el mensaje
         if (session.contractingPlan === true) {
@@ -88,9 +98,32 @@ export class SalesFlow extends BaseConversationFlow {
         );
     }    /**
      * Maneja el mensaje del usuario
-     */
-    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
+     */    async handle(user: User, message: string, session: SessionData): Promise<boolean> {
         try {
+            // Manejar mensajes de cortesía después de contratación exitosa
+            if ((session as any).contractCompletedAt) {
+                const timeSinceCompletion = Date.now() - (session as any).contractCompletedAt.getTime();
+                if (timeSinceCompletion < 120000) { // 2 minutos
+                    const courtesyMessages = ['gracias', 'thank', 'ok', 'perfecto', 'excelente', 'muy bien', 'genial'];
+                    if (courtesyMessages.some(word => message.toLowerCase().includes(word))) {
+                        await this.messageService.sendTextMessage(user.phoneNumber,
+                            `¡De nada! Fue un placer ayudarte con tu contratación. 😊\n\nSi necesitas algo más en el futuro, escribe "menu" para ver todas las opciones disponibles.\n\n¡Bienvenido a la familia Conecta2! 🎉`
+                        );
+
+                        // Limpiar completamente la sesión después de responder
+                        delete (session as any).contractCompletedAt;
+                        session.flowActive = undefined;
+                        session.salesConversationStarted = false;
+                        session.selectedService = undefined;
+
+                        return true;
+                    }
+                } else {
+                    // Limpiar el estado después de 2 minutos
+                    delete (session as any).contractCompletedAt;
+                }
+            }
+
             // Inicializar historial de ventas si no existe
             if (!session.salesHistory) {
                 session.salesHistory = [];
@@ -143,25 +176,29 @@ export class SalesFlow extends BaseConversationFlow {
                 });
 
                 return true;
-            }            // Construir contexto para la IA (solo si es necesario usar IA)
+            }            // Usar Azure OpenAI para respuesta inteligente
             const context = this.buildSalesContext(user, session);
 
             try {
-                // Obtener respuesta de la IA para consultas no estándar
-                const aiResponse = await this.aiService.getSalesResponse(message, user, session.salesHistory.slice(-2));
+                // Obtener respuesta de Azure OpenAI
+                const response = await this.azureOpenAIService.getSalesResponse(message, context);
 
-                // Enviar respuesta al usuario
-                await this.messageService.sendTextMessage(user.phoneNumber, aiResponse);
+                if (response.success) {
+                    // Enviar respuesta al usuario
+                    await this.messageService.sendTextMessage(user.phoneNumber, response.message);
 
-                // Guardar en historial
-                session.salesHistory.push({
-                    user: message,
-                    ai: aiResponse,
-                    timestamp: new Date()
-                });
+                    // Guardar en historial
+                    session.salesHistory.push({
+                        user: message,
+                        ai: response.message,
+                        timestamp: new Date()
+                    });
+                } else {
+                    throw new Error(response.error || 'Error en respuesta de IA');
+                }
             } catch (error) {
                 // Si falla la IA, usar respuesta de fallback
-                console.error('Error obteniendo respuesta de IA:', error);
+                console.error('Error obteniendo respuesta de Azure OpenAI:', error);
                 const fallbackResponse = this.getFallbackResponse(message);
 
                 // Enviar respuesta de fallback
@@ -178,9 +215,23 @@ export class SalesFlow extends BaseConversationFlow {
             return true;
         } catch (error) {
             console.error('Error en SalesFlow:', error);
+
+            // Usar el nuevo sistema de notificaciones si está disponible
+            try {
+                const NotificationService = require('../services/NotificationService').default;
+                const notificationService = NotificationService.getInstance();
+                await notificationService.sendErrorAlert(error as Error, {
+                    flow: 'SalesFlow',
+                    user: user.phoneNumber,
+                    session: session.flowActive
+                });
+            } catch (notificationError) {
+                console.error('Error enviando notificación:', notificationError);
+            }
+
             await this.messageService.sendTextMessage(
                 user.phoneNumber,
-                'Lo siento, ha ocurrido un error al procesar tu solicitud. Por favor, intenta nuevamente más tarde.'
+                'Lo siento, ha ocurrido un error al procesar tu solicitud. Nuestro equipo técnico ha sido notificado y trabajará para solucionarlo pronto.\n\n¿Te gustaría que te conecte con un agente humano?'
             );
             return false;
         }
@@ -340,9 +391,7 @@ Para continuar con tu contratación, necesito algunos datos:
                         const planName = session.contractData.planName;
 
                         // Crear ticket de alta prioridad
-                        await this.createSalesTicket(user, session);
-
-                        // Enviar mensaje de confirmación usando los datos guardados
+                        await this.createSalesTicket(user, session);                        // Enviar mensaje de confirmación usando los datos guardados
                         await this.messageService.sendTextMessage(user.phoneNumber,
                             `✅ **¡Contratación Exitosa!**
 
@@ -357,15 +406,25 @@ Para continuar con tu contratación, necesito algunos datos:
 
 ` +
                             `¡Gracias por confiar en Conecta2 Telecomunicaciones! 🎉`
-                        );
-
-                        // Limpiar completamente el flujo de ventas después de todo
+                        );                        // Limpiar completamente el flujo de ventas después de todo
                         session.flowActive = undefined;
                         session.salesConversationStarted = false;
                         session.selectedService = undefined;
                         session.contractingPlan = false;
                         session.contractingStep = undefined;
                         session.contractData = undefined;
+                        session.salesHistory = [];
+                        session.step = undefined;
+                        session.awaitingServiceSelection = false;
+                        // Agregar estado temporal para manejar mensajes de cortesía
+                        (session as any).contractCompletedAt = new Date();
+
+                        // Limpiar cualquier otro flag activo
+                        session.changingPassword = false;
+                        session.creatingTicket = false;
+                        session.consultingInvoices = false;
+                        session.upgradingPlan = false;
+                        session.verifyingPayment = false;
 
                         console.log('✅ Flujo de ventas cerrado completamente después de crear el ticket');
                     } else {

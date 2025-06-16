@@ -1,7 +1,6 @@
 export * from './User';
 export * from './Ticket';
 export * from './Invoice';
-export * from './AIService';
 export * from './WhatsAppMessage';
 export * from './OverdueCustomer';
 export * from './CustomerServiceInfo';

@@ -2,7 +2,16 @@ import axios from 'axios';
 import { config } from '../config';
 
 export class MessageService {
-    async sendMessage(message: Record<string, unknown>): Promise<void> {
+    private static instance: MessageService;
+
+    private constructor() { }
+
+    public static getInstance(): MessageService {
+        if (!MessageService.instance) {
+            MessageService.instance = new MessageService();
+        }
+        return MessageService.instance;
+    } async sendMessage(message: Record<string, unknown>): Promise<{ messageId?: string; success: boolean }> {
         try {
             console.log(`[MessageService] 📤 Enviando mensaje a WhatsApp API:`, JSON.stringify(message, null, 2));
 
@@ -18,13 +27,19 @@ export class MessageService {
             );
 
             console.log(`[MessageService] ✅ Mensaje enviado exitosamente:`, response.status, response.data);
+
+            return {
+                success: true,
+                messageId: response.data?.messages?.[0]?.id || undefined
+            };
         } catch (error: any) {
             console.error(`[MessageService] ❌ Error sending message:`, error.response?.data || error.message);
-            throw error;
+            return {
+                success: false,
+                messageId: undefined
+            };
         }
-    }
-
-    async sendTextMessage(phoneNumber: string, text: string): Promise<void> {
+    } async sendTextMessage(phoneNumber: string, text: string): Promise<{ messageId?: string; success: boolean }> {
         const message = {
             messaging_product: 'whatsapp',
             to: phoneNumber,
@@ -32,7 +47,7 @@ export class MessageService {
             text: { body: text }
         };
 
-        await this.sendMessage(message);
+        return await this.sendMessage(message);
     }
 
     async sendDocument(phoneNumber: string, documentUrl: string, filename: string): Promise<void> {

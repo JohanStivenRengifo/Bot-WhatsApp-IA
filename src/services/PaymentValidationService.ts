@@ -1,8 +1,7 @@
 import fs from 'fs';
 import { config } from '../config';
-import { OpenAIService } from './ai/OpenAIService';
-import { GeminiService } from './ai/GeminiService';
 import { ImageMetadata } from './ImageStorageService';
+import { AzureOpenAIService } from './AzureOpenAIService';
 
 export interface PaymentValidationResult {
     isValid: boolean;
@@ -27,8 +26,7 @@ export interface PaymentValidationResult {
 }
 
 export class PaymentValidationService {
-    private openAIService: OpenAIService;
-    private geminiService: GeminiService;
+    private azureOpenAIService: AzureOpenAIService;
 
     // Datos válidos de cuentas bancarias
     private static readonly VALID_ACCOUNTS = [
@@ -54,8 +52,7 @@ export class PaymentValidationService {
     private static readonly BANCOLOMBIA_CONVENIO = '94375';
 
     constructor() {
-        this.openAIService = new OpenAIService();
-        this.geminiService = new GeminiService();
+        this.azureOpenAIService = new AzureOpenAIService();
     }
 
     /**
@@ -68,24 +65,35 @@ export class PaymentValidationService {
             // Verificar que el archivo existe
             if (!fs.existsSync(imageMetadata.localPath)) {
                 throw new Error('Archivo de imagen no encontrado');
-            }
-
-            // Intentar análisis con OpenAI primero, luego Gemini como fallback
+            }            // Usar Azure OpenAI para análisis de imagen
             let analysisResult: any;
-            let usedService = '';
+            let usedService = 'Azure OpenAI';
 
             try {
-                analysisResult = await this.analyzeImageWithOpenAI(imageMetadata);
-                usedService = 'OpenAI';
-            } catch (openAIError) {
-                console.log('⚠️ OpenAI falló, intentando con Gemini...');
-                try {
-                    analysisResult = await this.analyzeImageWithGemini(imageMetadata);
-                    usedService = 'Gemini';
-                } catch (geminiError) {
-                    console.error('❌ Ambos servicios de IA fallaron');
-                    throw new Error('No se pudo analizar la imagen con ningún servicio de IA');
+                // Convertir imagen a base64
+                const imageBuffer = fs.readFileSync(imageMetadata.localPath);
+                const base64Image = imageBuffer.toString('base64');
+                const dataUrl = `data:${imageMetadata.mimeType};base64,${base64Image}`;
+
+                // Analizar con Azure OpenAI
+                const response = await this.azureOpenAIService.analyzePaymentReceipt(dataUrl);
+
+                if (!response.success) {
+                    throw new Error(response.error || 'Error analizando imagen con Azure OpenAI');
                 }
+
+                // Parsear la respuesta JSON
+                try {
+                    analysisResult = JSON.parse(response.message);
+                } catch (parseError) {
+                    console.error('Error parseando respuesta de Azure OpenAI:', response.message);
+                    throw new Error('Respuesta de Azure OpenAI no válida');
+                }
+
+                usedService = 'Azure OpenAI';
+            } catch (error) {
+                console.error('❌ Error en análisis con Azure OpenAI');
+                throw new Error('No se pudo analizar la imagen');
             }
 
             console.log(`✅ Análisis completado con ${usedService}`);
@@ -115,61 +123,21 @@ export class PaymentValidationService {
             };
         }
     }    /**
-     * Analiza la imagen usando OpenAI Vision
+     * Analiza la imagen usando métodos básicos (sin IA)
+     * Devuelve información por defecto ya que no tenemos IA
      */
-    private async analyzeImageWithOpenAI(imageMetadata: ImageMetadata): Promise<any> {
-        if (!config.ai.openai.apiKey) {
-            throw new Error('OpenAI API key no configurada');
-        }
-
-        // Convertir imagen a base64
-        const imageBuffer = fs.readFileSync(imageMetadata.localPath);
-        const base64Image = imageBuffer.toString('base64');
-        const dataUrl = `data:${imageMetadata.mimeType};base64,${base64Image}`;
-
-        const prompt = this.buildAnalysisPrompt();
-
-        const response = await this.openAIService.analyzeImage(dataUrl, prompt);
-
-        if (!response.success) {
-            throw new Error(response.error || 'Error analizando imagen con OpenAI');
-        }
-
-        // Parsear la respuesta JSON
-        try {
-            return JSON.parse(response.message);
-        } catch (parseError) {
-            console.error('Error parseando respuesta de OpenAI:', response.message);
-            throw new Error('Respuesta de OpenAI no válida');
-        }
-    }    /**
-     * Analiza la imagen usando Gemini Vision
-     */
-    private async analyzeImageWithGemini(imageMetadata: ImageMetadata): Promise<any> {
-        if (!config.ai.gemini.apiKey) {
-            throw new Error('Gemini API key no configurada');
-        }
-
-        // Convertir imagen a base64
-        const imageBuffer = fs.readFileSync(imageMetadata.localPath);
-        const base64Image = imageBuffer.toString('base64');
-        const dataUrl = `data:${imageMetadata.mimeType};base64,${base64Image}`;
-
-        const prompt = this.buildAnalysisPrompt();
-
-        const response = await this.geminiService.analyzeImage(dataUrl, prompt);
-
-        if (!response.success) {
-            throw new Error(response.error || 'Error analizando imagen con Gemini');
-        }
-
-        // Parsear la respuesta JSON
-        try {
-            return JSON.parse(response.message);
-        } catch (parseError) {
-            console.error('Error parseando respuesta de Gemini:', response.message);
-            throw new Error('Respuesta de Gemini no válida');
-        }
+    private async analyzeImageBasic(imageMetadata: ImageMetadata): Promise<any> {
+        // Sin IA, devolvemos un resultado genérico que requiere validación manual
+        return {
+            amount: null,
+            date: null,
+            accountNumber: null,
+            bank: null,
+            referenceNumber: null,
+            paymentMethod: null,
+            confidence: 0.0,
+            imageQuality: 'fair'
+        };
     }
 
     /**

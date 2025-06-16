@@ -145,13 +145,19 @@ export interface SessionData {
         clientName: string;
         category?: string;
         urgency?: string;
-    };
-
-    // Datos de handover a agente
+    };    // Datos de handover a agente
     agentHandoverInProgress?: boolean;
     handoverStartTime?: Date;
     handoverTicketId?: string;
     assignedAgentId?: string;
+    advisorAttempts?: number; // Contador de intentos de escribir "asesor"
+
+    // Nuevas propiedades para control de conversación con agente
+    botPaused?: boolean; // Indica si el bot está pausado por conversación con agente
+    conversationWithAgent?: boolean; // Indica si hay una conversación activa con agente
+    crmConversationId?: string; // ID de la conversación en el CRM
+    agentLastActivity?: Date; // Última actividad del agente
+    agentResponseTimeout?: NodeJS.Timeout; // Timeout para reactivar bot si agente no responde
 
     // Historial de conversación de ventas
     salesHistory?: Array<{

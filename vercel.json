@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "name": "bot-whatsapp-conecta2",
+  "builds": [
+    {
+      "src": "src/index.ts",
+      "use": "@vercel/node",
+      "config": {
+        "includeFiles": ["src/**/*.ts", "package.json", "tsconfig.json"]
+      }
+    },
+    {
+      "src": "crm-dashboard/package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "crm-dashboard/dist",
+        "buildCommand": "cd crm-dashboard && npm install && npm run build:vercel"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "src": "/dashboard/(.*)",
+      "dest": "/crm-dashboard/dist/$1"
+    },
+    {
+      "src": "/dashboard",
+      "dest": "/crm-dashboard/dist/index.html"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/src/index.ts"
+    },
+    {
+      "src": "/webhook/(.*)",
+      "dest": "/src/index.ts"
+    },
+    {
+      "src": "/crm/(.*)",
+      "dest": "/src/index.ts"
+    },
+    {
+      "src": "/((?!dashboard|_next|favicon.ico).*)",
+      "dest": "/src/index.ts"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "src/index.ts": {
+      "maxDuration": 30,
+      "memory": 512,
+      "runtime": "nodejs18.x"
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/dashboard/:path*",
+      "destination": "/crm-dashboard/dist/:path*"
+    },
+    {
+      "source": "/dashboard",
+      "destination": "/crm-dashboard/dist/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "*"
+        },
+        {
+          "key": "Access-Control-Allow-Methods",
+          "value": "GET, POST, PUT, DELETE, OPTIONS"
+        },
+        {
+          "key": "Access-Control-Allow-Headers",
+          "value": "X-Requested-With, Content-Type, Accept, Authorization"
+        }
+      ]
+    }
+  ]
+}
