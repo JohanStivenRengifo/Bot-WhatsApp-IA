@@ -119,8 +119,8 @@ const DashboardLayout: React.FC = () => {
                     variant="dot"
                     invisible={
                       item.text !== 'Conversaciones' ||
-                      !metrics?.data?.pendingMessages ||
-                      metrics.data.pendingMessages === 0
+                      !(metrics as any)?.data?.pendingMessages ||
+                      (metrics as any).data.pendingMessages === 0
                     }
                   >
                     <Icon color={isActive ? 'primary' : 'inherit'} />
@@ -185,7 +185,7 @@ const DashboardLayout: React.FC = () => {
           {/* Notificaciones */}
           <IconButton color="inherit" sx={{ mr: 1 }}>
             <Badge
-              badgeContent={metrics?.data?.pendingMessages || 0}
+              badgeContent={(metrics as any)?.data?.pendingMessages || 0}
               color="error"
             >
               <NotificationsIcon />

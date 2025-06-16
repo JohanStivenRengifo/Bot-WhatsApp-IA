@@ -16,11 +16,11 @@ import { SettingsProvider } from './contexts/SettingsContext';
 import LoginPage from './pages/LoginPage';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardHome from './pages/DashboardHome';
-import ConversationsPageImproved from './pages/ConversationsPageImproved';
+import ConversationsPage from './pages/ConversationsPage';
 import ConversationDetailPage from './pages/ConversationDetailPage';
 import AgentsPage from './pages/AgentsPage';
 import AnalyticsPage from './pages/AnalyticsPage';
-import SettingsPageSimple from './pages/SettingsPageSimple';
+import SettingsPage from './pages/SettingsPage';
 import BotControlPage from './pages/BotControlPage';
 
 // Configuración del cliente de React Query
@@ -151,17 +151,14 @@ function App() {
                   }
                 >
                   <Route index element={<DashboardHome />} />
-                  <Route
-                    path="conversations"
-                    element={<ConversationsPageImproved />}
-                  />
+                  <Route path="conversations" element={<ConversationsPage />} />
                   <Route
                     path="conversations/:id"
                     element={<ConversationDetailPage />}
                   />
                   <Route path="agents" element={<AgentsPage />} />
                   <Route path="analytics" element={<AnalyticsPage />} />
-                  <Route path="settings" element={<SettingsPageSimple />} />
+                  <Route path="settings" element={<SettingsPage />} />
                   <Route path="bot-control" element={<BotControlPage />} />
                 </Route>
 

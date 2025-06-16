@@ -103,13 +103,11 @@ export const useAgents = () => {
 
 // Hook para métricas en tiempo real
 export const useRealTimeMetrics = () => {
-    const queryClient = useQueryClient();
-
-    const query = useQuery({
+    const queryClient = useQueryClient(); const query = useQuery({
         queryKey: ['realtime-metrics'],
         queryFn: async () => {
             const response = await apiClient.getRealTimeMetrics();
-            return response.data;
+            return response;
         },
         refetchInterval: 5000, // Refrescar cada 5 segundos
     });
@@ -131,12 +129,13 @@ export const useRealTimeMetrics = () => {
 };
 
 // Hook para estadísticas de conversaciones
+// Hook para estadísticas de conversaciones
 export const useConversationStats = (params?: any) => {
     return useQuery({
         queryKey: ['conversation-stats', params],
         queryFn: async () => {
             const response = await apiClient.getConversationStats(params);
-            return response.data;
+            return response;
         },
         staleTime: 2 * 60 * 1000, // 2 minutos
     });
@@ -148,7 +147,7 @@ export const useAgentStats = (params?: any) => {
         queryKey: ['agent-stats', params],
         queryFn: async () => {
             const response = await apiClient.getAgentStats(params);
-            return response.data;
+            return response;
         },
         staleTime: 2 * 60 * 1000, // 2 minutos
     });
@@ -160,7 +159,7 @@ export const useMessageStats = (params?: any) => {
         queryKey: ['message-stats', params],
         queryFn: async () => {
             const response = await apiClient.getMessageStats(params);
-            return response.data;
+            return response;
         },
         staleTime: 2 * 60 * 1000, // 2 minutos
     });

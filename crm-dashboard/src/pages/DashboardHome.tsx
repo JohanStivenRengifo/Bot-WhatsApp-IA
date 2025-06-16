@@ -77,11 +77,10 @@ const DashboardHome: React.FC = () => {
     isLoading: agentLoading,
     error: agentError,
   } = useAgentStats();
-
   // Usar los helpers para acceder a los datos de forma segura
-  const metricsData = getMetrics(metrics);
-  const conversationData = getConversationStats(conversationStats);
-  const agentData = getAgentStats(agentStats);
+  const metricsData = getMetrics(metrics?.data);
+  const conversationData = getConversationStats(conversationStats?.data);
+  const agentData = getAgentStats(agentStats?.data);
 
   if (metricsLoading || statsLoading || agentLoading) {
     return (

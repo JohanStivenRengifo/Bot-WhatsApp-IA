@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Bot,
   Settings,
@@ -22,8 +22,8 @@ import {
   Zap,
   Database,
   FileText,
-  Server,
-  Wifi,
+  Globe,
+  Shield,
 } from 'lucide-react';
 import { apiClient } from '../services/api';
 
@@ -102,13 +102,10 @@ const BotControlPage: React.FC = () => {
   const [showSensitiveData, setShowSensitiveData] = useState(false);
   const [maintenanceMessage, setMaintenanceMessage] = useState('');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(true);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    loadBotData(true); // Cargar datos iniciales con loading
+    loadBotData(true);
 
-    // Actualizar cada 60 segundos sin mostrar loading (menos frecuente)
     const interval = setInterval(() => {
       loadBotData(false);
     }, 60000);
@@ -130,7 +127,8 @@ const BotControlPage: React.FC = () => {
         apiClient.getBotMetrics(),
         apiClient.getBotLogs({ limit: 50 }),
         apiClient.getBotSessions(),
-      ]); // Procesar resultados
+      ]);
+
       if (results[0].status === 'fulfilled') {
         setBotStatus(results[0].value.data.data || results[0].value.data);
       }
@@ -304,36 +302,6 @@ const BotControlPage: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'running':
-        return 'text-green-600 bg-green-100 border-green-200';
-      case 'paused':
-        return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-      case 'maintenance':
-        return 'text-blue-600 bg-blue-100 border-blue-200';
-      case 'error':
-        return 'text-red-600 bg-red-100 border-red-200';
-      default:
-        return 'text-gray-600 bg-gray-100 border-gray-200';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'running':
-        return <CheckCircle className="h-4 w-4" />;
-      case 'paused':
-        return <Pause className="h-4 w-4" />;
-      case 'maintenance':
-        return <Wrench className="h-4 w-4" />;
-      case 'error':
-        return <XCircle className="h-4 w-4" />;
-      default:
-        return <Clock className="h-4 w-4" />;
-    }
-  };
-
   const formatUptime = (uptime: number) => {
     const hours = Math.floor(uptime / 3600);
     const minutes = Math.floor((uptime % 3600) / 60);
@@ -341,90 +309,122 @@ const BotControlPage: React.FC = () => {
   };
 
   const renderStatusTab = () => (
-    <div className="space-y-6">
-      {/* Estado del Bot */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Bot className="h-5 w-5 mr-2" />
-          Estado del Bot
-        </h3>
-
-        {botStatus && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Estado</p>
-                  <p
-                    className={`text-lg font-semibold capitalize ${
-                      getStatusColor(botStatus.status).split(' ')[0]
-                    }`}
-                  >
-                    {botStatus.status}
-                  </p>
-                </div>
-                <div
-                  className={`p-2 rounded-full ${getStatusColor(
-                    botStatus.status
-                  )}`}
-                >
-                  {getStatusIcon(botStatus.status)}
-                </div>
-              </div>
+    <div className="space-y-8 animate-fade-in">
+      {/* Header con Estado Principal */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-2xl shadow-xl p-8 text-white">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div
+              className={`p-4 rounded-full ${
+                botStatus?.status === 'running'
+                  ? 'bg-green-500'
+                  : botStatus?.status === 'paused'
+                  ? 'bg-yellow-500'
+                  : 'bg-red-500'
+              } shadow-lg`}
+            >
+              <Bot className="h-8 w-8" />
             </div>
-
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">
-                    Tiempo Activo
-                  </p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {botStatus.uptimeFormatted ||
-                      formatUptime(botStatus.uptime)}
-                  </p>
-                </div>
-                <Clock className="h-8 w-8 text-blue-500" />
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">
-                    Mensajes Procesados
-                  </p>
-                  <p className="text-lg font-semibold text-gray-900">
-                    {botStatus.messagesProcessed}
-                  </p>
-                </div>
-                <MessageSquare className="h-8 w-8 text-green-500" />
-              </div>
-            </div>
-
-            <div className="bg-gray-50 rounded-lg p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-500">Errores</p>
-                  <p className="text-lg font-semibold text-red-600">
-                    {botStatus.errorsCount}
-                  </p>
-                </div>
-                <AlertTriangle className="h-8 w-8 text-red-500" />
-              </div>
+            <div>
+              <h2 className="text-3xl font-bold">Bot WhatsApp</h2>
+              <p className="text-blue-100 capitalize text-lg">
+                {botStatus?.status === 'running'
+                  ? '✅ Funcionando Correctamente'
+                  : botStatus?.status === 'paused'
+                  ? '⏸️ En Pausa'
+                  : '❌ Con Problemas'}
+              </p>
             </div>
           </div>
-        )}
+          <div className="text-right">
+            <p className="text-blue-100 text-sm">Versión</p>
+            <p className="text-2xl font-bold">
+              {botStatus?.version || '1.0.0'}
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Controles */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Settings className="h-5 w-5 mr-2" />
+      {/* Métricas Principales */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="card border-l-4 border-blue-500 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Tiempo Activo</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {botStatus?.uptimeFormatted ||
+                  formatUptime(botStatus?.uptime || 0)}
+              </p>
+              <p className="text-blue-600 text-xs mt-1">
+                Desde el último reinicio
+              </p>
+            </div>
+            <div className="p-3 bg-blue-100 rounded-full">
+              <Clock className="h-8 w-8 text-blue-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="card border-l-4 border-green-500 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm font-medium">
+                Mensajes Procesados
+              </p>
+              <p className="text-3xl font-bold text-gray-900">
+                {botStatus?.messagesProcessed || 0}
+              </p>
+              <p className="text-green-600 text-xs mt-1">Total acumulado</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-full">
+              <MessageSquare className="h-8 w-8 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="card border-l-4 border-purple-500 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm font-medium">
+                Flujos Activos
+              </p>
+              <p className="text-3xl font-bold text-gray-900">
+                {flows.filter((f) => f.enabled).length}
+              </p>
+              <p className="text-purple-600 text-xs mt-1">
+                de {flows.length} totales
+              </p>
+            </div>
+            <div className="p-3 bg-purple-100 rounded-full">
+              <Zap className="h-8 w-8 text-purple-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="card border-l-4 border-red-500 hover:shadow-xl transition-shadow">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-gray-600 text-sm font-medium">Errores</p>
+              <p className="text-3xl font-bold text-gray-900">
+                {botStatus?.errorsCount || 0}
+              </p>
+              <p className="text-red-600 text-xs mt-1">Últimas 24 horas</p>
+            </div>
+            <div className="p-3 bg-red-100 rounded-full">
+              <AlertTriangle className="h-8 w-8 text-red-600" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Controles del Bot */}
+      <div className="card">
+        <h3 className="text-2xl font-bold text-gray-900 mb-6 flex items-center">
+          <Settings className="h-6 w-6 mr-3 text-blue-600" />
           Controles del Bot
         </h3>
 
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <button
             onClick={() => handleBotAction('pause')}
             disabled={
@@ -432,10 +432,17 @@ const BotControlPage: React.FC = () => {
               botStatus?.status === 'maintenance' ||
               actionLoading === 'pause'
             }
-            className="inline-flex items-center px-4 py-2 border border-yellow-300 text-sm font-medium rounded-md text-yellow-700 bg-yellow-50 hover:bg-yellow-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="group relative overflow-hidden bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold py-4 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 disabled:transform-none disabled:cursor-not-allowed"
           >
-            <Pause className="h-4 w-4 mr-2" />
-            {actionLoading === 'pause' ? 'Pausando...' : 'Pausar Bot'}
+            <div className="absolute inset-0 bg-white opacity-20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+            <div className="relative flex items-center justify-center">
+              {actionLoading === 'pause' ? (
+                <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+              ) : (
+                <Pause className="h-5 w-5 mr-2" />
+              )}
+              {actionLoading === 'pause' ? 'Pausando...' : 'Pausar Bot'}
+            </div>
           </button>
 
           <button
@@ -443,65 +450,123 @@ const BotControlPage: React.FC = () => {
             disabled={
               botStatus?.status === 'running' || actionLoading === 'resume'
             }
-            className="inline-flex items-center px-4 py-2 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="group relative overflow-hidden bg-gradient-to-r from-green-400 to-blue-500 hover:from-green-500 hover:to-blue-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold py-4 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 disabled:transform-none disabled:cursor-not-allowed"
           >
-            <Play className="h-4 w-4 mr-2" />
-            {actionLoading === 'resume' ? 'Reanudando...' : 'Reanudar Bot'}
+            <div className="absolute inset-0 bg-white opacity-20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+            <div className="relative flex items-center justify-center">
+              {actionLoading === 'resume' ? (
+                <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+              ) : (
+                <Play className="h-5 w-5 mr-2" />
+              )}
+              {actionLoading === 'resume' ? 'Reanudando...' : 'Reanudar Bot'}
+            </div>
           </button>
 
           <button
             onClick={() => handleBotAction('restart')}
             disabled={actionLoading === 'restart'}
-            className="inline-flex items-center px-4 py-2 border border-blue-300 text-sm font-medium rounded-md text-blue-700 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="group relative overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 hover:from-blue-500 hover:to-purple-600 disabled:from-gray-400 disabled:to-gray-500 text-white font-semibold py-4 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 disabled:transform-none disabled:cursor-not-allowed"
           >
-            <RotateCcw className="h-4 w-4 mr-2" />
-            {actionLoading === 'restart' ? 'Reiniciando...' : 'Reiniciar Bot'}
+            <div className="absolute inset-0 bg-white opacity-20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+            <div className="relative flex items-center justify-center">
+              {actionLoading === 'restart' ? (
+                <RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+              ) : (
+                <RotateCcw className="h-5 w-5 mr-2" />
+              )}
+              {actionLoading === 'restart' ? 'Reiniciando...' : 'Reiniciar Bot'}
+            </div>
           </button>
+
           <button
             onClick={() => loadBotData(false)}
-            className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            className="group relative overflow-hidden bg-gradient-to-r from-gray-400 to-gray-600 hover:from-gray-500 hover:to-gray-700 text-white font-semibold py-4 px-6 rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200"
           >
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Actualizar
+            <div className="absolute inset-0 bg-white opacity-20 transform -skew-x-12 -translate-x-full group-hover:translate-x-full transition-transform duration-700"></div>
+            <div className="relative flex items-center justify-center">
+              <RefreshCw className="h-5 w-5 mr-2" />
+              Actualizar
+            </div>
           </button>
         </div>
       </div>
 
-      {/* Health Check */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Activity className="h-5 w-5 mr-2" />
-          Estado del Sistema
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 text-green-600 rounded-full">
-              <Wifi className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">WhatsApp API</p>
-              <p className="text-sm text-green-600">Conectado</p>
-            </div>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 text-green-600 rounded-full">
-              <Database className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-500">Base de Datos</p>
-              <p className="text-sm text-green-600">MongoDB Activa</p>
+      {/* Estado de Conexiones */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-semibold text-gray-900">
+              WhatsApp API
+            </h4>
+            <div
+              className={`px-3 py-1 rounded-full text-sm font-medium ${
+                botStatus?.status === 'running'
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-red-100 text-red-800'
+              }`}
+            >
+              {botStatus?.status === 'running' ? 'Conectado' : 'Desconectado'}
             </div>
           </div>
-
           <div className="flex items-center space-x-3">
-            <div className="p-2 bg-green-100 text-green-600 rounded-full">
-              <Server className="h-5 w-5" />
+            <div
+              className={`p-2 rounded-full ${
+                botStatus?.status === 'running' ? 'bg-green-100' : 'bg-red-100'
+              }`}
+            >
+              <Globe
+                className={`h-5 w-5 ${
+                  botStatus?.status === 'running'
+                    ? 'text-green-600'
+                    : 'text-red-600'
+                }`}
+              />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Servidor</p>
-              <p className="text-sm text-green-600">Operativo</p>
+              <p className="text-sm text-gray-600">
+                {botStatus?.status === 'running'
+                  ? 'Conexión estable con WhatsApp'
+                  : 'Sin conexión a WhatsApp'}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-semibold text-gray-900">
+              Base de Datos
+            </h4>
+            <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+              Conectada
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-full bg-green-100">
+              <Database className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">
+                MongoDB funcionando correctamente
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-lg font-semibold text-gray-900">Servidor</h4>
+            <div className="px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800">
+              Online
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-full bg-green-100">
+              <Shield className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Servidor Node.js activo</p>
             </div>
           </div>
         </div>
@@ -510,8 +575,8 @@ const BotControlPage: React.FC = () => {
   );
 
   const renderConfigTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="card">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
             <Settings className="h-5 w-5 mr-2" />
@@ -521,7 +586,7 @@ const BotControlPage: React.FC = () => {
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowSensitiveData(!showSensitiveData)}
-              className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-800"
+              className="inline-flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-800 transition-colors"
             >
               {showSensitiveData ? (
                 <EyeOff className="h-4 w-4 mr-1" />
@@ -549,7 +614,7 @@ const BotControlPage: React.FC = () => {
                 onChange={(e) =>
                   setBotConfig({ ...botConfig, whatsappToken: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
                 disabled={!showSensitiveData}
               />
             </div>
@@ -564,7 +629,7 @@ const BotControlPage: React.FC = () => {
                 onChange={(e) =>
                   setBotConfig({ ...botConfig, phoneNumberId: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
               />
             </div>
 
@@ -578,7 +643,7 @@ const BotControlPage: React.FC = () => {
                 onChange={(e) =>
                   setBotConfig({ ...botConfig, webhookUrl: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
               />
             </div>
 
@@ -592,7 +657,7 @@ const BotControlPage: React.FC = () => {
                 onChange={(e) =>
                   setBotConfig({ ...botConfig, apiUrl: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
               />
             </div>
 
@@ -605,7 +670,7 @@ const BotControlPage: React.FC = () => {
                 onChange={(e) =>
                   setBotConfig({ ...botConfig, logLevel: e.target.value })
                 }
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                className="input-field"
               >
                 <option value="error">Error</option>
                 <option value="warn">Warning</option>
@@ -622,7 +687,7 @@ const BotControlPage: React.FC = () => {
                 type="text"
                 value={botConfig.environment}
                 readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-gray-100 text-gray-600"
+                className="input-field bg-gray-100 text-gray-600"
               />
             </div>
           </div>
@@ -632,7 +697,7 @@ const BotControlPage: React.FC = () => {
           <button
             onClick={handleSaveConfig}
             disabled={actionLoading === 'config'}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+            className="btn-primary disabled:opacity-50"
           >
             <Save className="h-4 w-4 mr-2" />
             {actionLoading === 'config'
@@ -645,47 +710,116 @@ const BotControlPage: React.FC = () => {
   );
 
   const renderFlowsTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
-          <Zap className="h-5 w-5 mr-2" />
-          Flujos de Conversación
-        </h3>
+    <div className="space-y-8 animate-fade-in">
+      <div className="card">
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center space-x-3">
+            <div className="p-3 bg-purple-100 rounded-full">
+              <Zap className="h-6 w-6 text-purple-600" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900">
+                Flujos de Conversación
+              </h3>
+              <p className="text-gray-600">
+                Gestiona qué flujos están activos en el bot
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <p className="text-sm text-gray-500">Flujos Activos</p>
+            <p className="text-2xl font-bold text-purple-600">
+              {flows.filter((f) => f.enabled).length}/{flows.length}
+            </p>
+          </div>
+        </div>
 
-        <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {flows.map((flow, index) => (
             <div
               key={index}
-              className="flex items-center justify-between p-4 border border-gray-200 rounded-lg"
+              className={`relative p-6 rounded-xl border-2 transition-all duration-300 ${
+                flow.enabled
+                  ? 'border-green-200 bg-green-50 shadow-lg'
+                  : 'border-gray-200 bg-gray-50 hover:border-gray-300'
+              }`}
             >
-              <div>
-                <h4 className="font-medium text-gray-900 capitalize">
-                  {flow.name.replace(/([A-Z])/g, ' $1').trim()}
-                </h4>
-                <p className="text-sm text-gray-500">{flow.description}</p>
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <div
+                      className={`p-2 rounded-lg ${
+                        flow.enabled ? 'bg-green-100' : 'bg-gray-100'
+                      }`}
+                    >
+                      <Zap
+                        className={`h-5 w-5 ${
+                          flow.enabled ? 'text-green-600' : 'text-gray-400'
+                        }`}
+                      />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-900 text-lg capitalize">
+                        {flow.name.replace(/([A-Z])/g, ' $1').trim()}
+                      </h4>
+                      <div
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          flow.enabled
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {flow.enabled ? '✅ Activo' : '⏸️ Inactivo'}
+                      </div>
+                    </div>
+                  </div>
+                  <p className="text-gray-600 text-sm leading-relaxed">
+                    {flow.description}
+                  </p>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer ml-4">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={flow.enabled}
+                    onChange={(e) =>
+                      handleFlowToggle(flow.name, e.target.checked)
+                    }
+                  />
+                  <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[4px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-gradient-to-r peer-checked:from-green-400 peer-checked:to-blue-500 shadow-lg"></div>
+                </label>
               </div>
 
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                  checked={flow.enabled}
-                  onChange={(e) =>
-                    handleFlowToggle(flow.name, e.target.checked)
-                  }
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+              {flow.enabled && (
+                <div className="absolute top-2 right-2">
+                  <div className="h-3 w-3 bg-green-400 rounded-full animate-pulse shadow-lg"></div>
+                </div>
+              )}
             </div>
           ))}
         </div>
+
+        {flows.length === 0 && (
+          <div className="text-center py-12">
+            <div className="p-4 bg-gray-100 rounded-full w-16 h-16 mx-auto mb-4">
+              <Zap className="h-8 w-8 text-gray-400 mx-auto" />
+            </div>
+            <h4 className="text-lg font-medium text-gray-900 mb-2">
+              No hay flujos configurados
+            </h4>
+            <p className="text-gray-600">
+              Los flujos aparecerán aquí cuando estén disponibles
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );
 
   const renderMetricsTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <TrendingUp className="h-5 w-5 mr-2" />
           Métricas del Bot
@@ -745,8 +879,8 @@ const BotControlPage: React.FC = () => {
   );
 
   const renderSessionsTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
             <Users className="h-5 w-5 mr-2" />
@@ -755,7 +889,7 @@ const BotControlPage: React.FC = () => {
 
           <button
             onClick={handleClearAllSessions}
-            className="inline-flex items-center px-3 py-1 text-sm text-red-600 hover:text-red-800 border border-red-300 rounded-md hover:bg-red-50"
+            className="btn-danger text-sm"
           >
             <Trash2 className="h-4 w-4 mr-1" />
             Limpiar Todas
@@ -809,7 +943,7 @@ const BotControlPage: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleClearSession(session.phoneNumber)}
-                      className="text-red-600 hover:text-red-900"
+                      className="text-red-600 hover:text-red-900 transition-colors"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -830,8 +964,8 @@ const BotControlPage: React.FC = () => {
   );
 
   const renderLogsTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="card">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 flex items-center">
             <FileText className="h-5 w-5 mr-2" />
@@ -839,7 +973,7 @@ const BotControlPage: React.FC = () => {
           </h3>
           <button
             onClick={() => loadBotData(false)}
-            className="inline-flex items-center px-3 py-1 text-sm text-blue-600 hover:text-blue-800"
+            className="btn-secondary text-sm"
           >
             <RefreshCw className="h-4 w-4 mr-1" />
             Actualizar
@@ -887,8 +1021,8 @@ const BotControlPage: React.FC = () => {
   );
 
   const renderMaintenanceTab = () => (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow p-6">
+    <div className="space-y-6 animate-fade-in">
+      <div className="card">
         <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
           <Wrench className="h-5 w-5 mr-2" />
           Modo Mantenimiento
@@ -903,7 +1037,7 @@ const BotControlPage: React.FC = () => {
               value={maintenanceMessage}
               onChange={(e) => setMaintenanceMessage(e.target.value)}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              className="input-field"
               placeholder="El bot está temporalmente en mantenimiento. Por favor, intenta más tarde."
             />
           </div>
@@ -912,7 +1046,7 @@ const BotControlPage: React.FC = () => {
             <button
               onClick={() => handleMaintenanceToggle(true)}
               disabled={botStatus?.status === 'maintenance'}
-              className="inline-flex items-center px-4 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center px-4 py-2 border border-orange-300 text-sm font-medium rounded-md text-orange-700 bg-orange-50 hover:bg-orange-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <Wrench className="h-4 w-4 mr-2" />
               Activar Mantenimiento
@@ -921,7 +1055,7 @@ const BotControlPage: React.FC = () => {
             <button
               onClick={() => handleMaintenanceToggle(false)}
               disabled={botStatus?.status !== 'maintenance'}
-              className="inline-flex items-center px-4 py-2 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center px-4 py-2 border border-green-300 text-sm font-medium rounded-md text-green-700 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <CheckCircle className="h-4 w-4 mr-2" />
               Desactivar Mantenimiento
@@ -965,12 +1099,26 @@ const BotControlPage: React.FC = () => {
               {botStatus && (
                 <div className="flex items-center space-x-2">
                   <div
-                    className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
-                      botStatus.status
-                    )}`}
+                    className={`px-3 py-1 rounded-full text-sm font-medium flex items-center ${
+                      botStatus.status === 'running'
+                        ? 'bg-green-100 text-green-800'
+                        : botStatus.status === 'paused'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : botStatus.status === 'maintenance'
+                        ? 'bg-blue-100 text-blue-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}
                   >
-                    {getStatusIcon(botStatus.status)}
-                    <span className="ml-2 capitalize">{botStatus.status}</span>
+                    {botStatus.status === 'running' ? (
+                      <CheckCircle className="h-4 w-4 mr-1" />
+                    ) : botStatus.status === 'paused' ? (
+                      <Pause className="h-4 w-4 mr-1" />
+                    ) : botStatus.status === 'maintenance' ? (
+                      <Wrench className="h-4 w-4 mr-1" />
+                    ) : (
+                      <XCircle className="h-4 w-4 mr-1" />
+                    )}
+                    <span className="capitalize">{botStatus.status}</span>
                   </div>
                 </div>
               )}
@@ -995,7 +1143,7 @@ const BotControlPage: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Tabs */}
         <div className="border-b border-gray-200 mb-6">
-          <nav className="-mb-px flex space-x-8">
+          <nav className="-mb-px flex space-x-8 overflow-x-auto">
             {[
               { id: 'status', label: 'Estado', icon: Activity },
               { id: 'config', label: 'Configuración', icon: Settings },
@@ -1010,7 +1158,7 @@ const BotControlPage: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center ${
+                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center whitespace-nowrap transition-colors ${
                     activeTab === tab.id
                       ? 'border-blue-500 text-blue-600'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
