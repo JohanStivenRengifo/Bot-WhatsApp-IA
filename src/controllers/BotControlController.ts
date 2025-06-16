@@ -327,16 +327,20 @@ export class BotControlController {
                 error: 'Error deshabilitando flujo'
             });
         }
-    }
-
-    /**
+    }    /**
      * Obtener sesiones activas
      * GET /api/bot/sessions
      */
     async getActiveSessions(req: Request, res: Response): Promise<void> {
         try {
             // TODO: Implementar obtención de sesiones reales
-            const sessions = [];
+            const sessions: Array<{
+                phoneNumber: string;
+                startTime: string;
+                lastActivity: string;
+                currentFlow: string;
+                botPaused: boolean;
+            }> = [];
 
             res.json({
                 success: true,
