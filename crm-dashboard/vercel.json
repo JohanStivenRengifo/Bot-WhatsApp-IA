@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "name": "conecta2-crm-dashboard",
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
+      }
+    }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
+  ],
+  "env": {
+    "VITE_API_URL": "@vite_api_url",
+    "VITE_WS_URL": "@vite_ws_url"
+  },
+  "build": {
+    "env": {
+      "VITE_API_URL": "@vite_api_url",
+      "VITE_WS_URL": "@vite_ws_url"
+    }
+  },
+  "functions": {},
+  "regions": ["iad1"],
+  "github": {
+    "autoAlias": false
+  }
+}

@@ -66,7 +66,11 @@ class WhatsAppBot {
             console.log(`404 - Not Found: ${req.method} ${req.path}`);
             res.status(404).json({ error: 'Not Found' });
         });
-    } public async start(port: number = config.server.port): Promise<void> {
+    } public getApp(): express.Application {
+        return this.app;
+    }
+
+    public async start(port: number = config.server.port): Promise<void> {
         validateEnvironment();
 
         try {
@@ -110,6 +114,25 @@ async function startBot() {
     }
 }
 
-startBot();
+// For Vercel serverless deployment, export the app instance
+const bot = new WhatsAppBot();
 
-export default WhatsAppBot;
+// Initialize MongoDB connection
+(async () => {
+    try {
+        const mongoService = MongoDBService.getInstance();
+        await mongoService.connect();
+        const crmService = CRMServiceMongoDB.getInstance();
+        console.log('✅ CRM Service MongoDB inicializado para Vercel');
+    } catch (error) {
+        console.error('❌ Error conectando a MongoDB en Vercel:', error);
+    }
+})();
+
+// Start bot locally if not in serverless environment
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    startBot();
+}
+
+// Export the Express app for Vercel
+export default bot.getApp();

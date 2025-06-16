@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import type { ReactNode } from 'react';
 import { apiClient } from '../services/api';
+import { webSocketService } from '../services/websocket';
 import type { User } from '../types';
 
 interface AuthContextType {
@@ -61,6 +62,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setUser(userData);
         localStorage.setItem('auth_token', newToken);
 
+        // Reconectar WebSocket con el nuevo token
+        webSocketService.reconnectWithAuth();
+
         return true;
       }
       return false;
@@ -71,7 +75,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false);
     }
   };
-
   const logout = async () => {
     try {
       await apiClient.logout();
@@ -81,6 +84,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(null);
       setToken(null);
       localStorage.removeItem('auth_token');
+
+      // Desconectar WebSocket
+      webSocketService.disconnect();
     }
   };
 

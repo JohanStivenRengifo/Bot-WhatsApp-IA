@@ -10,13 +10,18 @@ class WebSocketService {
 
     constructor() {
         this.connect();
-    }
-
-    private connect() {
+    } private connect() {
         if (this.socket?.connected) return;
 
         this.connectionStatus = 'connecting';
         const token = localStorage.getItem('auth_token');
+
+        // Si no hay token, no intentar conectar
+        if (!token) {
+            console.log('⚠️ No hay token de autenticación, no se puede conectar al WebSocket');
+            this.connectionStatus = 'disconnected';
+            return;
+        }
 
         this.socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:3000', {
             auth: {
@@ -160,6 +165,13 @@ class WebSocketService {
     updateAgentStatus(status: 'online' | 'offline' | 'busy') {
         if (!this.socket?.connected) return;
         this.socket.emit('agent_status', { status });
+    }
+
+    // Método para reconectar después del login
+    reconnectWithAuth() {
+        console.log('🔌 Reconectando WebSocket con autenticación...');
+        this.disconnect();
+        this.connect();
     }
 
     // Getters

@@ -479,39 +479,40 @@ const AnalyticsPage: React.FC = () => {
                     Estado
                   </th>
                 </tr>
-              </thead>
+              </thead>{' '}
               <tbody className="bg-white divide-y divide-gray-200">
-                {(
-                  (agentStats as any)?.data || [
-                    {
-                      name: 'María García',
-                      conversations: 45,
-                      averageResponseTime: 780,
-                      satisfaction: 0.92,
-                      online: true,
-                    },
-                    {
-                      name: 'Juan Pérez',
-                      conversations: 38,
-                      averageResponseTime: 820,
-                      satisfaction: 0.88,
-                      online: true,
-                    },
-                    {
-                      name: 'Ana López',
-                      conversations: 32,
-                      averageResponseTime: 650,
-                      satisfaction: 0.95,
-                      online: false,
-                    },
-                    {
-                      name: 'Carlos Ruiz',
-                      conversations: 28,
-                      averageResponseTime: 910,
-                      satisfaction: 0.85,
-                      online: true,
-                    },
-                  ]
+                {(Array.isArray((agentStats as any)?.data)
+                  ? (agentStats as any).data
+                  : [
+                      {
+                        name: 'María García',
+                        conversations: 45,
+                        averageResponseTime: 780,
+                        satisfaction: 0.92,
+                        online: true,
+                      },
+                      {
+                        name: 'Juan Pérez',
+                        conversations: 38,
+                        averageResponseTime: 820,
+                        satisfaction: 0.88,
+                        online: true,
+                      },
+                      {
+                        name: 'Ana López',
+                        conversations: 32,
+                        averageResponseTime: 650,
+                        satisfaction: 0.95,
+                        online: false,
+                      },
+                      {
+                        name: 'Carlos Ruiz',
+                        conversations: 28,
+                        averageResponseTime: 910,
+                        satisfaction: 0.85,
+                        online: true,
+                      },
+                    ]
                 ).map((agent: any, index: number) => (
                   <tr key={index}>
                     <td className="px-6 py-4 whitespace-nowrap">
