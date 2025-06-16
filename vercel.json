@@ -4,17 +4,13 @@
   "builds": [
     {
       "src": "src/index.ts",
-      "use": "@vercel/node",
-      "config": {
-        "includeFiles": ["src/**/*.ts", "package.json", "tsconfig.json"]
-      }
+      "use": "@vercel/node"
     },
     {
       "src": "crm-dashboard/package.json",
       "use": "@vercel/static-build",
       "config": {
-        "distDir": "crm-dashboard/dist",
-        "buildCommand": "cd crm-dashboard && npm install && npm run build:vercel"
+        "distDir": "crm-dashboard/dist"
       }
     }
   ],
@@ -47,23 +43,6 @@
   "env": {
     "NODE_ENV": "production"
   },
-  "functions": {
-    "src/index.ts": {
-      "maxDuration": 30,
-      "memory": 512,
-      "runtime": "nodejs18.x"
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/dashboard/:path*",
-      "destination": "/crm-dashboard/dist/:path*"
-    },
-    {
-      "source": "/dashboard",
-      "destination": "/crm-dashboard/dist/index.html"
-    }
-  ],
   "headers": [
     {
       "source": "/api/(.*)",
