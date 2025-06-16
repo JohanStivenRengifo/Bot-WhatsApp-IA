@@ -20,6 +20,7 @@ import {
   Menu,
   ListItemIcon,
   ListItemText,
+  Tooltip,
 } from '@mui/material';
 import {
   Send as SendIcon,
@@ -30,6 +31,7 @@ import {
   Done as DoneIcon,
   Label as LabelIcon,
   Star as PriorityIcon,
+  AutoFixHigh as AIIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
 import {
@@ -41,6 +43,7 @@ import {
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
+import AISuggestionsComponent from '../components/AISuggestionsComponent';
 
 // Etiquetas disponibles para conversaciones
 const conversationTags = [
@@ -181,10 +184,21 @@ const ConversationDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const [newMessage, setNewMessage] = useState('');
   const [showTemplates, setShowTemplates] = useState(false);
-  const [welcomeSent, setWelcomeSent] = useState(false);
+  // DESACTIVADO: Estado para controlar el envío de bienvenida automática
+  // const [welcomeSent, setWelcomeSent] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [showTagDialog, setShowTagDialog] = useState(false);
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
+
+  // DESACTIVADO: Reset del estado de bienvenida
+  // Ya no es necesario ya que se desactivó el envío automático
+  /*
+  React.useEffect(() => {
+    setWelcomeSent(false);
+  }, [id]);
+  */
+
+  const [showAISuggestions, setShowAISuggestions] = useState(false);
   const [actionMenuAnchor, setActionMenuAnchor] = useState<null | HTMLElement>(
     null
   );
@@ -201,23 +215,28 @@ const ConversationDetailPage: React.FC = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
-
   React.useEffect(() => {
     scrollToBottom();
   }, [messagesResponse]);
 
-  // Envío automático de mensaje de bienvenida cuando el agente abre el chat
+  // DESACTIVADO: Envío automático de mensaje de bienvenida
+  // Se ha desactivado el envío automático del mensaje de bienvenida
+  // para que los agentes puedan controlar manualmente cuándo enviar el primer mensaje
+  /*
   React.useEffect(() => {
     const sendWelcomeMessage = async () => {
+      // Verificar si ya se envió el mensaje de bienvenida
+      if (welcomeSent) return;
+
       if (
-        !welcomeSent &&
         id &&
         conversationResponse?.data &&
-        !messagesLoading
+        !messagesLoading &&
+        messagesResponse?.data
       ) {
         const conversation =
           conversationResponse.data.conversation || conversationResponse.data;
-        const messages = messagesResponse?.data?.messages || [];
+        const messages = messagesResponse.data.messages || [];
 
         // Solo enviar bienvenida si la conversación está activa y no hay mensajes del agente
         const hasAgentMessages = messages.some(
@@ -228,13 +247,16 @@ const ConversationDetailPage: React.FC = () => {
           const welcomeTemplate = messageTemplates.find((t) => t.isWelcome);
           if (welcomeTemplate) {
             try {
+              // Marcar como enviado ANTES de enviar para evitar duplicados
+              setWelcomeSent(true);
               await sendMessageMutation.mutateAsync({
                 conversationId: id,
                 message: welcomeTemplate.content,
               });
-              setWelcomeSent(true);
             } catch (error) {
               console.error('Error enviando mensaje de bienvenida:', error);
+              // Si hay error, permitir reintentar
+              setWelcomeSent(false);
             }
           }
         }
@@ -244,12 +266,14 @@ const ConversationDetailPage: React.FC = () => {
     sendWelcomeMessage();
   }, [
     id,
-    conversationResponse,
-    messagesResponse,
+    conversationResponse?.data?.status,
     messagesLoading,
     welcomeSent,
-    sendMessageMutation,
+    // Usar length para evitar re-renders innecesarios
+    messagesResponse?.data?.messages?.length,
   ]);
+  */
+
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !id) return;
 
@@ -268,6 +292,16 @@ const ConversationDetailPage: React.FC = () => {
     setNewMessage(template.content);
     setShowTemplates(false);
   };
+
+  const handleAISuggestionSelect = (suggestedText: string) => {
+    setNewMessage(suggestedText);
+    setShowAISuggestions(false);
+  };
+
+  const handleToggleAISuggestions = () => {
+    setShowAISuggestions(!showAISuggestions);
+  };
+
   const handleEndConversation = async () => {
     if (!id) return;
 
@@ -1083,7 +1117,70 @@ const ConversationDetailPage: React.FC = () => {
                       },
                     },
                   }}
-                />
+                />{' '}
+                <Tooltip
+                  title={
+                    !messages?.length
+                      ? 'No hay mensajes para analizar'
+                      : conversation?.status === 'closed'
+                      ? 'No se pueden generar sugerencias en conversaciones cerradas'
+                      : showAISuggestions
+                      ? 'Ocultar sugerencias de IA'
+                      : 'Generar respuestas sugeridas con IA'
+                  }
+                >
+                  <span>
+                    <Button
+                      variant={showAISuggestions ? 'contained' : 'outlined'}
+                      onClick={handleToggleAISuggestions}
+                      disabled={
+                        !messages?.length || conversation?.status === 'closed'
+                      }
+                      sx={{
+                        minWidth: 'auto',
+                        px: 2,
+                        height: 'fit-content',
+                        borderRadius: 3,
+                        borderColor: '#1976d2',
+                        color: showAISuggestions ? '#fff' : '#1976d2',
+                        backgroundColor: showAISuggestions
+                          ? '#1976d2'
+                          : 'transparent',
+                        '&:hover': {
+                          backgroundColor: '#1976d2',
+                          color: '#fff',
+                          transform: 'scale(1.05)',
+                        },
+                        '&:disabled': {
+                          borderColor: '#ccc',
+                          color: '#ccc',
+                        },
+                        transition: 'all 0.2s ease-in-out',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        '&::before': showAISuggestions
+                          ? {
+                              content: '""',
+                              position: 'absolute',
+                              top: 0,
+                              left: '-100%',
+                              width: '100%',
+                              height: '100%',
+                              background:
+                                'linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)',
+                              animation: 'shimmer 2s infinite',
+                            }
+                          : {},
+                        '@keyframes shimmer': {
+                          '0%': { left: '-100%' },
+                          '100%': { left: '100%' },
+                        },
+                      }}
+                    >
+                      <AIIcon />
+                    </Button>
+                  </span>
+                </Tooltip>
                 <Button
                   variant="contained"
                   onClick={handleSendMessage}
@@ -1144,9 +1241,25 @@ const ConversationDetailPage: React.FC = () => {
                       size="small"
                     />
                   )}
-                </Box>
+                </Box>{' '}
               </Box>
             </Paper>
+            {/* AI Suggestions Component */}
+            {showAISuggestions && messages && (
+              <Box mt={2}>
+                <AISuggestionsComponent
+                  conversationId={id!}
+                  messages={messages}
+                  customerInfo={{
+                    name: conversation?.customer?.name,
+                    phone: conversation?.customer?.phone,
+                    currentPlan: conversation?.customer?.currentPlan,
+                  }}
+                  onSuggestionSelect={handleAISuggestionSelect}
+                  onClose={() => setShowAISuggestions(false)}
+                />
+              </Box>
+            )}
           </Card>
         </Box>
       </Box>

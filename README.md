@@ -16,5 +16,3 @@ Bot de WhatsApp Business para Conecta2 Telecomunicaciones con Azure OpenAI integ
 ## 📄 Licencia
 
 ISC License - Ver archivo `LICENSE` para más detalles.
-
----

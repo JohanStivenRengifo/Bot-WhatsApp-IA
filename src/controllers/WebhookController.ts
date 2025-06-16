@@ -4,16 +4,21 @@ import { MessageHandler } from './MessageHandler';
 import { SecurityService, MessageService, AzureOpenAIService } from '../services';
 import { AgentHandoverFlow } from '../flows/AgentHandoverFlow';
 import { WhatsAppHandoverEvent } from '../interfaces/WhatsAppMessage';
+import { HealthMonitorMiddleware } from '../middleware/healthMonitor';
 
 export class WebhookController {
     private messageHandler: MessageHandler;
     private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
-    private messageService: MessageService; constructor() {
+    private messageService: MessageService;
+    private healthMonitor: HealthMonitorMiddleware;
+
+    constructor() {
         this.messageHandler = MessageHandler.getInstance();
         this.azureOpenAIService = new AzureOpenAIService();
         this.securityService = new SecurityService();
         this.messageService = MessageService.getInstance();
+        this.healthMonitor = HealthMonitorMiddleware.getInstance();
     }
 
     async verifyWebhook(req: Request, res: Response): Promise<void> {
@@ -66,18 +71,35 @@ export class WebhookController {
 
             if (body.object === 'whatsapp_business_account') {
                 body.entry?.forEach((entry) => {
-                    entry.changes?.forEach((change) => {
-                        // Manejar mensajes estándar
+                    entry.changes?.forEach((change) => {                        // Manejar mensajes estándar
                         if (change.field === 'messages') {
                             const messages = change.value.messages;
+                            const statuses = change.value.statuses;
+
+                            // Procesar solo mensajes entrantes del cliente (no confirmaciones de entrega)
                             if (messages) {
                                 messages.forEach((message) => {
-                                    // Validar y transformar el mensaje antes de procesarlo
-                                    const whatsappMessage = this.transformMessage(message);
+                                    // FILTRO CRÍTICO: Solo procesar mensajes entrantes del cliente
+                                    // Verificar que el mensaje sea del cliente y no una confirmación de entrega
+                                    if (this.isIncomingCustomerMessage(message)) {
+                                        console.log(`📩 Procesando mensaje entrante del cliente: ${message.from}`);
 
-                                    if (whatsappMessage) {
-                                        this.messageHandler.processMessage(whatsappMessage);
+                                        // Validar y transformar el mensaje antes de procesarlo
+                                        const whatsappMessage = this.transformMessage(message);
+
+                                        if (whatsappMessage) {
+                                            this.messageHandler.processMessage(whatsappMessage);
+                                        }
+                                    } else {
+                                        console.log(`🚫 Mensaje filtrado (no es del cliente): ${JSON.stringify(message)}`);
                                     }
+                                });
+                            }
+                            // Procesar confirmaciones de entrega separadamente (sin enviar al MessageHandler)
+                            if (statuses && Array.isArray(statuses)) {
+                                (statuses as Array<Record<string, unknown>>).forEach((status) => {
+                                    console.log(`✅ Confirmación de entrega recibida: ${JSON.stringify(status)}`);
+                                    // Aquí podríamos actualizar el estado del mensaje en el CRM si es necesario
                                 });
                             }
                         }
@@ -105,21 +127,26 @@ export class WebhookController {
             const aiStatus = await this.azureOpenAIService.getServiceStatus();
             const aiConfig = this.azureOpenAIService.getCurrentConfiguration();
             const securityStats = this.securityService.getSecurityStats();
+            const healthMonitorStatus = this.healthMonitor.getHealthStatus();
 
-            res.json({
-                status: 'active',
+            const overallHealthy = aiStatus.status === 'active' && healthMonitorStatus.azureOpenAI.isHealthy;
+
+            res.status(overallHealthy ? 200 : 503).json({
+                status: overallHealthy ? 'active' : 'degraded',
                 service: 'Conecta2 WhatsApp Bot',
                 timestamp: new Date().toISOString(),
                 ai: {
                     configuration: aiConfig,
-                    services: aiStatus
+                    services: aiStatus,
+                    monitoring: healthMonitorStatus.azureOpenAI
                 },
                 security: {
                     blockedUsers: securityStats.blockedUsers,
                     activeSessions: securityStats.activeSessions,
                     rateLimitedUsers: securityStats.rateLimitedUsers,
                     totalAuthAttempts: securityStats.totalAuthAttempts
-                }
+                },
+                monitoring: healthMonitorStatus.monitoring
             });
         } catch (error) {
             console.error('Health check error:', error);
@@ -227,5 +254,65 @@ export class WebhookController {
         } catch (error) {
             console.error('Error handling handover event:', error);
         }
+    }
+
+    /**
+     * Verifica si un mensaje es realmente del cliente y no una confirmación de entrega
+     */
+    private isIncomingCustomerMessage(message: Record<string, unknown>): boolean {
+        // Verificar que tenga los campos básicos de un mensaje del cliente
+        if (!message.from || !message.id || !message.timestamp || !message.type) {
+            return false;
+        }
+
+        // Filtrar mensajes de confirmación de entrega o estado
+        // Los mensajes de estado no tienen contenido de texto o interacción
+        const messageType = message.type as string;
+
+        // Solo procesar tipos de mensajes válidos del cliente
+        const validCustomerMessageTypes = ['text', 'interactive', 'image', 'document', 'audio', 'video', 'location'];
+        if (!validCustomerMessageTypes.includes(messageType)) {
+            console.log(`🚫 Tipo de mensaje filtrado: ${messageType}`);
+            return false;
+        }
+
+        // Verificar que tenga contenido real (no sea solo un mensaje de estado)
+        if (messageType === 'text') {
+            const textContent = message.text as { body?: string };
+            if (!textContent || !textContent.body || textContent.body.trim() === '') {
+                console.log(`🚫 Mensaje de texto vacío filtrado`);
+                return false;
+            }
+        }
+
+        // Filtrar mensajes que son claramente confirmaciones del sistema
+        // (estos suelen tener IDs específicos o patrones reconocibles)
+        const messageId = message.id as string;
+        if (messageId && messageId.startsWith('wamid.')) {
+            // Los mensajes del cliente tienen IDs que empiezan con 'wamid.'
+            // pero las confirmaciones de entrega también pueden tenerlos
+            // Necesitamos verificar más campos para estar seguros
+
+            // Si el mensaje tiene un campo 'context' apuntando a un mensaje anterior,
+            // probablemente es una respuesta del cliente
+            if (message.context) {
+                return true;
+            }
+
+            // Si tiene contenido válido y un 'from' que no es nuestro número, es del cliente
+            const from = message.from as string;
+            const ourPhoneNumberId = process.env.PHONE_NUMBER_ID || '';
+
+            if (from && from !== ourPhoneNumberId && messageType === 'text') {
+                return true;
+            }
+
+            if (from && from !== ourPhoneNumberId && messageType === 'interactive') {
+                return true;
+            }
+        }
+
+        // Por defecto, si llega hasta aquí y tiene los campos básicos, es probablemente del cliente
+        return true;
     }
 }

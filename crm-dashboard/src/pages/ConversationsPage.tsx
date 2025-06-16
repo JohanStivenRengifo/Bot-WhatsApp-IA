@@ -16,10 +16,15 @@ import {
   Users,
   TrendingUp,
   RefreshCw,
+  Tag,
+  UserPlus,
 } from 'lucide-react';
 import { useConversations } from '../hooks/useApi';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import TagManager from '../components/TagManager';
+import AgentAssignment from '../components/AgentAssignment';
+import type { ConversationTag } from '../types';
 
 const ConversationsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -28,8 +33,20 @@ const ConversationsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
   const [priorityFilter, setPriorityFilter] = useState('all');
+  const [tagFilter, setTagFilter] = useState('all');
   const [showFilters, setShowFilters] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+  // Estados para los nuevos componentes
+  const [tagManagerOpen, setTagManagerOpen] = useState(false);
+  const [agentAssignmentOpen, setAgentAssignmentOpen] = useState(false);
+  const [selectedConversationId, setSelectedConversationId] =
+    useState<string>('');
+  const [selectedConversationTags, setSelectedConversationTags] = useState<
+    ConversationTag[]
+  >([]);
+  const [selectedConversationAgent, setSelectedConversationAgent] =
+    useState<string>('');
 
   const {
     data: conversationsData,
@@ -108,9 +125,38 @@ const ConversationsPage: React.FC = () => {
         return { color: 'bg-gray-100 text-gray-800', label: 'N/A' };
     }
   };
-
   const handleViewConversation = (conversationId: string) => {
     navigate(`/crm-dashboard/conversations/${conversationId}`);
+  };
+
+  const handleManageTags = (
+    conversationId: string,
+    currentTags: ConversationTag[] = []
+  ) => {
+    setSelectedConversationId(conversationId);
+    setSelectedConversationTags(currentTags);
+    setTagManagerOpen(true);
+  };
+
+  const handleAssignAgent = (
+    conversationId: string,
+    currentAgentId?: string
+  ) => {
+    setSelectedConversationId(conversationId);
+    setSelectedConversationAgent(currentAgentId || '');
+    setAgentAssignmentOpen(true);
+  };
+
+  const handleTagsUpdated = (tags: ConversationTag[]) => {
+    setSelectedConversationTags(tags);
+    // Aquí harías la llamada a la API para actualizar las etiquetas
+    console.log('Etiquetas actualizadas:', tags);
+  };
+
+  const handleAgentAssigned = (agentId: string, agentName: string) => {
+    setSelectedConversationAgent(agentId);
+    // Aquí harías la llamada a la API para asignar el agente
+    console.log('Agente asignado:', { agentId, agentName });
   };
 
   const formatTime = (dateString: string) => {
@@ -181,7 +227,6 @@ const ConversationsPage: React.FC = () => {
           </div>
         </div>
       </div>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -280,7 +325,6 @@ const ConversationsPage: React.FC = () => {
                   <option value="closed">Cerradas</option>
                   <option value="transferred">Transferidas</option>
                 </select>
-
                 <select
                   value={agentFilter}
                   onChange={(e) => setAgentFilter(e.target.value)}
@@ -290,8 +334,7 @@ const ConversationsPage: React.FC = () => {
                   <option value="unassigned">Sin asignar</option>
                   <option value="agent1">Agente 1</option>
                   <option value="agent2">Agente 2</option>
-                </select>
-
+                </select>{' '}
                 <select
                   value={priorityFilter}
                   onChange={(e) => setPriorityFilter(e.target.value)}
@@ -302,10 +345,43 @@ const ConversationsPage: React.FC = () => {
                   <option value="medium">Prioridad Media</option>
                   <option value="low">Prioridad Baja</option>
                 </select>
+                <select
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="all">Todas las etiquetas</option>
+                  <option value="urgent">Urgente</option>
+                  <option value="technical">Técnico</option>
+                  <option value="billing">Facturación</option>
+                  <option value="commercial">Comercial</option>
+                  <option value="support">Soporte</option>
+                  <option value="vip">VIP</option>
+                </select>
               </>
             )}
           </div>
         </div>
+
+        {/* Botón para gestión avanzada de etiquetas */}
+        {!showFilters && (
+          <div className="mb-4">
+            <button
+              onClick={() => setTagManagerOpen(true)}
+              className="btn-secondary mr-2"
+            >
+              <Tag className="h-4 w-4 mr-2" />
+              Gestionar Etiquetas
+            </button>
+            <button
+              onClick={() => setAgentAssignmentOpen(true)}
+              className="btn-secondary"
+            >
+              <UserPlus className="h-4 w-4 mr-2" />
+              Asignación de Agentes
+            </button>
+          </div>
+        )}
 
         {/* Conversations List */}
         <div className="card">
@@ -380,7 +456,6 @@ const ConversationsPage: React.FC = () => {
                               )}
                             </div>
                           </div>
-
                           <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
                             <div className="flex items-center">
                               <Phone className="h-4 w-4 mr-1" />
@@ -396,28 +471,84 @@ const ConversationsPage: React.FC = () => {
                                 {conversation.assignedAgent}
                               </div>
                             )}
-                          </div>
-
+                          </div>{' '}
                           <p className="text-gray-700 text-sm mb-3 line-clamp-2">
                             {conversation.lastMessage ||
                               'Sin mensajes recientes'}
                           </p>
-
-                          {conversation.tags &&
-                            conversation.tags.length > 0 && (
-                              <div className="flex flex-wrap gap-1">
-                                {conversation.tags.map(
-                                  (tag: string, index: number) => (
-                                    <span
-                                      key={index}
-                                      className="inline-flex px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded"
-                                    >
-                                      {tag}
-                                    </span>
-                                  )
-                                )}
-                              </div>
+                          {/* Etiquetas mejoradas */}
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {conversation.tags &&
+                            conversation.tags.length > 0 ? (
+                              conversation.tags.map(
+                                (tag: any, index: number) => (
+                                  <span
+                                    key={index}
+                                    className="inline-flex items-center px-2 py-1 text-xs font-medium rounded cursor-pointer hover:opacity-80 transition-opacity"
+                                    style={{
+                                      backgroundColor: tag.color || '#e5e7eb',
+                                      color: tag.color ? 'white' : '#374151',
+                                    }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleManageTags(
+                                        conversation.id,
+                                        conversation.tags
+                                      );
+                                    }}
+                                  >
+                                    {tag.icon && (
+                                      <span className="mr-1">{tag.icon}</span>
+                                    )}
+                                    {typeof tag === 'string' ? tag : tag.name}
+                                  </span>
+                                )
+                              )
+                            ) : (
+                              <button
+                                className="inline-flex items-center px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded hover:bg-gray-200 transition-colors"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleManageTags(conversation.id);
+                                }}
+                              >
+                                <Tag className="h-3 w-3 mr-1" />
+                                Agregar etiquetas
+                              </button>
                             )}
+                          </div>
+                          {/* Información del agente asignado */}
+                          {conversation.assignedAgent ? (
+                            <div className="flex items-center text-xs text-gray-500">
+                              <Users className="h-3 w-3 mr-1" />
+                              <span className="mr-2">
+                                Asignado a: {conversation.assignedAgent}
+                              </span>
+                              <button
+                                className="text-blue-600 hover:text-blue-800"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAssignAgent(
+                                    conversation.id,
+                                    conversation.assignedAgentId
+                                  );
+                                }}
+                              >
+                                Cambiar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              className="flex items-center text-xs text-gray-500 hover:text-blue-600 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAssignAgent(conversation.id);
+                              }}
+                            >
+                              <UserPlus className="h-3 w-3 mr-1" />
+                              Asignar agente
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -479,6 +610,21 @@ const ConversationsPage: React.FC = () => {
           )}
         </div>
       </div>
+      {/* Componentes de diálogo */}{' '}
+      <TagManager
+        open={tagManagerOpen}
+        onClose={() => setTagManagerOpen(false)}
+        selectedTags={selectedConversationTags}
+        onTagsChange={handleTagsUpdated}
+        conversationId={selectedConversationId}
+      />
+      <AgentAssignment
+        open={agentAssignmentOpen}
+        onClose={() => setAgentAssignmentOpen(false)}
+        conversationId={selectedConversationId}
+        currentAgentId={selectedConversationAgent}
+        onAgentAssigned={handleAgentAssigned}
+      />
     </div>
   );
 };

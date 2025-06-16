@@ -49,12 +49,12 @@ export interface Conversation {
     messageCount: number;
     avgResponseTime?: number;
     firstResponseTime?: number;
-    resolutionTime?: number;
-
-    // Business context
+    resolutionTime?: number;    // Business context
     category?: string;
     subcategory?: string;
-    tags: string[];
+    tags: ConversationTag[];
+    flowType?: string;
+    originalFlow?: string;
     sentiment?: 'positive' | 'neutral' | 'negative';
     satisfaction?: number; // 1-5
 
@@ -93,11 +93,47 @@ export interface Message {
     readAt?: Date;
     deliveredAt?: Date;
     failedAt?: Date;
-    errorMessage?: string;
-
-    timestamp: Date;
+    errorMessage?: string; timestamp: Date;
     createdAt: Date;
     metadata: Record<string, any>;
+}
+
+export interface ConversationTag {
+    id: string;
+    name: string;
+    color: string;
+    icon?: string;
+    description?: string;
+    category: 'general' | 'priority' | 'type' | 'status' | 'custom';
+    isSystem?: boolean;
+    createdAt?: Date;
+    createdBy?: string;
+}
+
+export interface AgentSession {
+    id: string;
+    agentId: string;
+    sessionId: string;
+    isActive: boolean;
+    status: 'available' | 'busy' | 'away' | 'offline';
+    maxConversations: number;
+    currentConversations: number;
+    startTime: Date;
+    lastActivity: Date;
+    endTime?: Date;
+    metadata?: Record<string, any>;
+}
+
+export interface AgentAutoAssignment {
+    enabled: boolean;
+    rules: {
+        byWorkload: boolean;
+        bySkills: boolean;
+        byAvailability: boolean;
+        roundRobin: boolean;
+    };
+    maxConversationsPerAgent: number;
+    priorityAgents?: string[];
 }
 
 export interface Ticket {

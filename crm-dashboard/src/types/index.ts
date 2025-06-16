@@ -18,7 +18,39 @@ export interface Conversation {
     lastMessageAt: string;
     createdAt: string;
     unreadCount?: number;
-    tags?: string[];
+    tags?: ConversationTag[];
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    flowType?: string;
+    lastActivity?: string;
+    metadata?: {
+        source?: string;
+        channel?: string;
+        originalFlow?: string;
+    };
+}
+
+export interface ConversationTag {
+    id: string;
+    name: string;
+    color: string;
+    icon?: string;
+    description?: string;
+    category?: 'general' | 'priority' | 'type' | 'status' | 'custom';
+    createdAt?: string;
+    createdBy?: string;
+}
+
+export interface Agent {
+    id: string;
+    name: string;
+    email: string;
+    role: 'agent' | 'supervisor' | 'admin';
+    isOnline: boolean;
+    status: 'available' | 'busy' | 'away' | 'offline';
+    currentConversations: number;
+    maxConversations: number;
+    lastActivity?: string;
+    sessionId?: string;
 }
 
 export interface Message {

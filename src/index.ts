@@ -8,6 +8,7 @@ import { User } from './interfaces';
 import { WebSocketService } from './services/WebSocketService';
 import { MongoDBService } from './services/MongoDBService';
 import { CRMServiceMongoDB } from './services/CRMServiceMongoDB';
+import { HealthMonitorMiddleware } from './middleware/healthMonitor';
 
 // Define interface for request with rawBody
 interface RequestWithRawBody extends express.Request {
@@ -68,9 +69,7 @@ class WhatsAppBot {
         });
     } public getApp(): express.Application {
         return this.app;
-    }
-
-    public async start(port: number = config.server.port): Promise<void> {
+    } public async start(port: number = config.server.port): Promise<void> {
         validateEnvironment();
 
         try {
@@ -82,6 +81,10 @@ class WhatsAppBot {
             const crmService = CRMServiceMongoDB.getInstance();
             console.log('✅ CRM Service MongoDB inicializado');
 
+            // Inicializar Health Monitor
+            const healthMonitor = HealthMonitorMiddleware.getInstance();
+            console.log('✅ Health Monitor inicializado');
+
             this.server.listen(port, () => {
                 console.log(`🤖 Conecta2 WhatsApp Bot running on port ${port}`);
                 console.log(`📱 Webhook URL: http://localhost:${port}/webhook`);
@@ -89,6 +92,7 @@ class WhatsAppBot {
                 console.log(`🌐 WebSocket server running on port ${port}`);
                 console.log(`🎛️ CRM Frontend URL: ${process.env.FRONTEND_URL || "http://localhost:5173"}`);
                 console.log(`🗄️ MongoDB conectado: ${config.MONGODB_DB_NAME}`);
+                console.log(`💚 Health monitoring activo`);
 
                 // Start notification system
                 const notificationController = new NotificationController(this.users);
