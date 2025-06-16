@@ -14,35 +14,28 @@
       }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/dashboard/(.*)",
-      "dest": "/crm-dashboard/dist/$1"
+      "source": "/dashboard/(.*)",
+      "destination": "/crm-dashboard/dist/$1"
     },
     {
-      "src": "/dashboard",
-      "dest": "/crm-dashboard/dist/index.html"
+      "source": "/dashboard",
+      "destination": "/crm-dashboard/dist/index.html"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "/src/index.ts"
+      "source": "/api/(.*)",
+      "destination": "/src/index.ts"
     },
     {
-      "src": "/webhook/(.*)",
-      "dest": "/src/index.ts"
+      "source": "/webhook/(.*)",
+      "destination": "/src/index.ts"
     },
     {
-      "src": "/crm/(.*)",
-      "dest": "/src/index.ts"
-    },
-    {
-      "src": "/((?!dashboard|_next|favicon.ico).*)",
-      "dest": "/src/index.ts"
+      "source": "/crm/(.*)",
+      "destination": "/src/index.ts"
     }
   ],
-  "env": {
-    "NODE_ENV": "production"
-  },
   "headers": [
     {
       "source": "/api/(.*)",
