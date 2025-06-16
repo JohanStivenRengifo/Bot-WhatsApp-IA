@@ -2,6 +2,7 @@ import { User, SessionData, WhatsAppMessage } from '../interfaces';
 import { ConversationFlow } from './ConversationFlow';
 import { extractMenuCommand } from '../utils/messageUtils';
 import { MessageService } from '../services';
+import { BotStateService } from '../services/BotStateService';
 
 /**
  * Clase que administra los flujos de conversación
@@ -9,9 +10,11 @@ import { MessageService } from '../services';
 export class ConversationFlowManager {
     private flows: ConversationFlow[] = [];
     private messageService: MessageService;
+    private botStateService: BotStateService;
 
     constructor(messageService: MessageService) {
         this.messageService = messageService;
+        this.botStateService = BotStateService.getInstance();
     }
 
     /**
@@ -52,6 +55,13 @@ export class ConversationFlowManager {
         }        // Verificar cada flujo en orden
         for (const flow of this.flows) {
             try {
+                // VERIFICAR SI EL FLUJO ESTÁ HABILITADO EN EL BOT
+                const flowName = this.getFlowNameForChecking(flow.name);
+                if (flowName && !this.botStateService.isFlowEnabled(flowName)) {
+                    console.log(`Flujo '${flow.name}' está deshabilitado, saltando...`);
+                    continue;
+                }
+
                 // Comprobar si el flujo puede manejar este mensaje
                 if (await flow.canHandle(user, message, session)) {
                     console.log(`Mensaje evaluado por flujo: ${flow.name}`);
@@ -70,15 +80,14 @@ export class ConversationFlowManager {
                 }
             } catch (error) {
                 console.error(`Error en flujo ${flow.name}:`, error);
+                this.botStateService.incrementErrorsCount();
                 // Continuar con el siguiente flujo en caso de error
             }
         }
 
         // Ningún flujo pudo manejar el mensaje
         return false;
-    }
-
-    /**
+    }    /**
      * Limpia todos los estados de flujo en la sesión
      */
     private resetSessionFlowState(session: SessionData): void {
@@ -96,5 +105,27 @@ export class ConversationFlowManager {
         session.description = undefined;
         session.asunto = undefined;
         session.newPassword = undefined;
+    }    /**
+     * Mapea el nombre del flujo de clase al nombre usado en el sistema de control
+     */
+    private getFlowNameForChecking(flowClassName: string): string | null {
+        const flowMapping: { [key: string]: string | null } = {
+            'InitialSelectionFlow': 'initialSelection',
+            'AuthenticationFlow': 'authentication',
+            'SalesFlow': 'sales',
+            'ClientMenuFlow': 'clientMenu',
+            'AgentHandoverFlow': 'agentHandover',
+            'TicketCreationFlow': 'ticketCreation',
+            'InvoicesFlow': 'invoices',
+            'PasswordChangeFlow': 'passwordChange',
+            'PlanUpgradeFlow': 'planUpgrade',
+            'PaymentReceiptFlow': 'paymentReceipt',
+            'DebtInquiryFlow': 'debtInquiry',
+            'LogoutFlow': 'logout',
+            'SuspendedServiceFlow': 'suspendedService',
+            'PrivacyPolicyFlow': null // Siempre habilitado
+        };
+
+        return flowMapping[flowClassName] || null;
     }
 }

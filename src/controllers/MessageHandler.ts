@@ -9,6 +9,7 @@ import {
     SecurityService
 } from '../services';
 import { SessionManager } from '../services/SessionManager';
+import { BotStateService } from '../services/BotStateService';
 import {
     ConversationFlowManager,
     AuthenticationFlow,
@@ -39,13 +40,15 @@ export class MessageHandler {
     private azureOpenAIService: AzureOpenAIService;
     private securityService: SecurityService;
     private flowManager: ConversationFlowManager;
-    private sessionManager: SessionManager; private constructor() {
+    private sessionManager: SessionManager;
+    private botStateService: BotStateService; private constructor() {
         this.messageService = MessageService.getInstance();
         this.customerService = new CustomerService();
         this.ticketService = new TicketService();
         this.paymentService = new PaymentService();
         this.azureOpenAIService = new AzureOpenAIService();
-        this.securityService = new SecurityService();// Inicializar el gestor de sesiones
+        this.securityService = new SecurityService();
+        this.botStateService = BotStateService.getInstance();// Inicializar el gestor de sesiones
         this.sessionManager = new SessionManager(this.messageService);
 
         // Inicializar el gestor de flujos con el servicio de mensajes
@@ -65,6 +68,25 @@ export class MessageHandler {
         return MessageHandler.instance;
     } async processMessage(message: WhatsAppMessage): Promise<void> {
         const phoneNumber = message.from;
+
+        // PRIMERO: Verificar el estado del bot
+        if (!this.botStateService.canProcessMessages()) {
+            if (this.botStateService.isInMaintenanceMode()) {
+                // En modo mantenimiento, enviar mensaje informativo
+                await this.messageService.sendTextMessage(
+                    phoneNumber,
+                    this.botStateService.getMaintenanceResponse()
+                );
+                return;
+            } else {
+                // Bot pausado, no procesar mensajes
+                console.log(`Bot está pausado. Mensaje de ${phoneNumber} no procesado.`);
+                return;
+            }
+        }
+
+        // Incrementar contador de mensajes procesados
+        this.botStateService.incrementMessagesProcessed();
 
         // Check rate limiting first
         const rateLimitCheck = this.securityService.checkRateLimit(phoneNumber);
@@ -98,7 +120,7 @@ export class MessageHandler {
                 acceptedPrivacyPolicy: false
             };
             this.users.set(phoneNumber, user);
-        }        // Extract text from message based on type
+        }// Extract text from message based on type
         let messageText = '';
         if (message.type === 'text' && message.text) {
             messageText = message.text.body;

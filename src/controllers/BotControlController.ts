@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { MessageHandler } from './MessageHandler';
 import { MessageService } from '../services/MessageService';
+import { BotStateService } from '../services/BotStateService';
 
 /**
  * Controlador para gestión y control del bot WhatsApp
@@ -8,26 +9,12 @@ import { MessageService } from '../services/MessageService';
 export class BotControlController {
     private messageHandler: MessageHandler;
     private messageService: MessageService;
+    private botStateService: BotStateService;
 
-    // Estado del bot
-    private static botStatus: 'running' | 'paused' | 'maintenance' | 'error' = 'running';
-    private static enabledFlows: Set<string> = new Set();
-    private static metrics = {
-        messagesProcessed: 0,
-        errorsCount: 0,
-        startTime: new Date(),
-        lastActivity: new Date()
-    };
-    private static logs: Array<{ timestamp: Date; level: string; message: string; }> = []; constructor() {
+    constructor() {
         this.messageHandler = MessageHandler.getInstance();
         this.messageService = MessageService.getInstance();
-
-        // Inicializar flujos habilitados por defecto
-        BotControlController.enabledFlows.add('initialSelection');
-        BotControlController.enabledFlows.add('authentication');
-        BotControlController.enabledFlows.add('sales');
-        BotControlController.enabledFlows.add('clientMenu');
-        BotControlController.enabledFlows.add('agentHandover');
+        this.botStateService = BotStateService.getInstance();
     }
 
     /**
@@ -36,18 +23,18 @@ export class BotControlController {
      */
     async getBotStatus(req: Request, res: Response): Promise<void> {
         try {
-            const uptime = Date.now() - BotControlController.metrics.startTime.getTime();
+            const metrics = this.botStateService.getMetrics();
 
             res.json({
                 success: true,
                 data: {
-                    status: BotControlController.botStatus,
-                    uptime: uptime,
-                    uptimeFormatted: this.formatUptime(uptime),
-                    lastActivity: BotControlController.metrics.lastActivity,
-                    messagesProcessed: BotControlController.metrics.messagesProcessed,
-                    errorsCount: BotControlController.metrics.errorsCount,
-                    enabledFlows: Array.from(BotControlController.enabledFlows),
+                    status: this.botStateService.getBotStatus(),
+                    uptime: metrics.uptime,
+                    uptimeFormatted: this.formatUptime(metrics.uptime),
+                    lastActivity: metrics.lastActivity,
+                    messagesProcessed: metrics.messagesProcessed,
+                    errorsCount: metrics.errorsCount,
+                    enabledFlows: this.botStateService.getEnabledFlows(),
                     version: process.env.npm_package_version || '1.0.0',
                     environment: process.env.NODE_ENV || 'development'
                 }
@@ -68,7 +55,7 @@ export class BotControlController {
     async getBotHealth(req: Request, res: Response): Promise<void> {
         try {
             const health = {
-                bot: BotControlController.botStatus === 'running' ? 'healthy' : 'unhealthy',
+                bot: this.botStateService.getBotStatus() === 'running' ? 'healthy' : 'unhealthy',
                 messageService: 'healthy', // TODO: Implementar check real
                 database: 'healthy', // TODO: Implementar check real
                 whatsappApi: 'healthy', // TODO: Implementar check real
@@ -100,14 +87,14 @@ export class BotControlController {
         try {
             const { reason } = req.body;
 
-            BotControlController.botStatus = 'paused';
-            this.addLog('info', `Bot pausado. Razón: ${reason || 'Manual'}`);
+            this.botStateService.setBotStatus('paused');
+            this.botStateService.addLog('info', `Bot pausado. Razón: ${reason || 'Manual'}`);
 
             res.json({
                 success: true,
                 message: 'Bot pausado correctamente',
                 data: {
-                    status: BotControlController.botStatus,
+                    status: this.botStateService.getBotStatus(),
                     reason: reason || 'Manual',
                     timestamp: new Date().toISOString()
                 }
@@ -127,14 +114,14 @@ export class BotControlController {
      */
     async resumeBot(req: Request, res: Response): Promise<void> {
         try {
-            BotControlController.botStatus = 'running';
-            this.addLog('info', 'Bot reanudado');
+            this.botStateService.setBotStatus('running');
+            this.botStateService.addLog('info', 'Bot reanudado');
 
             res.json({
                 success: true,
                 message: 'Bot reanudado correctamente',
                 data: {
-                    status: BotControlController.botStatus,
+                    status: this.botStateService.getBotStatus(),
                     timestamp: new Date().toISOString()
                 }
             });
@@ -153,23 +140,17 @@ export class BotControlController {
      */
     async restartBot(req: Request, res: Response): Promise<void> {
         try {
-            this.addLog('info', 'Bot reiniciando...');
+            this.botStateService.addLog('info', 'Bot reiniciando...');
 
             // Reiniciar métricas
-            BotControlController.metrics = {
-                messagesProcessed: 0,
-                errorsCount: 0,
-                startTime: new Date(),
-                lastActivity: new Date()
-            };
-
-            BotControlController.botStatus = 'running';
+            this.botStateService.resetMetrics();
+            this.botStateService.setBotStatus('running');
 
             res.json({
                 success: true,
                 message: 'Bot reiniciado correctamente',
                 data: {
-                    status: BotControlController.botStatus,
+                    status: this.botStateService.getBotStatus(),
                     timestamp: new Date().toISOString()
                 }
             });
@@ -193,9 +174,9 @@ export class BotControlController {
                 phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || 'NOT_SET',
                 webhookUrl: process.env.WEBHOOK_URL || 'NOT_SET',
                 apiUrl: process.env.API_URL || 'NOT_SET',
-                enabledFlows: Array.from(BotControlController.enabledFlows),
+                enabledFlows: this.botStateService.getEnabledFlows(),
                 rateLimitEnabled: true, // TODO: Obtener de configuración real
-                maintenanceMode: BotControlController.botStatus === 'maintenance',
+                maintenanceMode: this.botStateService.isInMaintenanceMode(),
                 logLevel: process.env.LOG_LEVEL || 'info',
                 environment: process.env.NODE_ENV || 'development'
             };
@@ -224,19 +205,23 @@ export class BotControlController {
             // TODO: Implementar actualización real de configuración
             // Por ahora solo actualizamos los flujos habilitados
             if (config.enabledFlows && Array.isArray(config.enabledFlows)) {
-                BotControlController.enabledFlows.clear();
+                // Deshabilitar todos los flujos primero
+                const currentFlows = this.botStateService.getEnabledFlows();
+                currentFlows.forEach(flow => this.botStateService.disableFlow(flow));
+
+                // Habilitar los flujos especificados
                 config.enabledFlows.forEach((flow: string) => {
-                    BotControlController.enabledFlows.add(flow);
+                    this.botStateService.enableFlow(flow);
                 });
             }
 
-            this.addLog('info', 'Configuración del bot actualizada');
+            this.botStateService.addLog('info', 'Configuración del bot actualizada');
 
             res.json({
                 success: true,
                 message: 'Configuración actualizada correctamente',
                 data: {
-                    enabledFlows: Array.from(BotControlController.enabledFlows),
+                    enabledFlows: this.botStateService.getEnabledFlows(),
                     timestamp: new Date().toISOString()
                 }
             });
@@ -256,22 +241,26 @@ export class BotControlController {
     async getAvailableFlows(req: Request, res: Response): Promise<void> {
         try {
             const availableFlows = [
-                { name: 'initialSelection', description: 'Selección inicial (Ventas/Soporte)', enabled: BotControlController.enabledFlows.has('initialSelection') },
-                { name: 'authentication', description: 'Autenticación de usuarios', enabled: BotControlController.enabledFlows.has('authentication') },
-                { name: 'sales', description: 'Flujo de ventas', enabled: BotControlController.enabledFlows.has('sales') },
-                { name: 'clientMenu', description: 'Menú de cliente autenticado', enabled: BotControlController.enabledFlows.has('clientMenu') },
-                { name: 'agentHandover', description: 'Transferencia a agente humano', enabled: BotControlController.enabledFlows.has('agentHandover') },
-                { name: 'ticketCreation', description: 'Creación de tickets', enabled: BotControlController.enabledFlows.has('ticketCreation') },
-                { name: 'invoices', description: 'Consulta de facturas', enabled: BotControlController.enabledFlows.has('invoices') },
-                { name: 'passwordChange', description: 'Cambio de contraseña', enabled: BotControlController.enabledFlows.has('passwordChange') },
-                { name: 'planUpgrade', description: 'Mejora de plan', enabled: BotControlController.enabledFlows.has('planUpgrade') },
-                { name: 'paymentReceipt', description: 'Validación de pagos', enabled: BotControlController.enabledFlows.has('paymentReceipt') },
-                { name: 'simplifiedUX', description: 'UX simplificada para usuarios rurales', enabled: BotControlController.enabledFlows.has('simplifiedUX') }
+                { name: 'initialSelection', description: 'Selección inicial (Ventas/Soporte)', enabled: this.botStateService.isFlowEnabled('initialSelection') },
+                { name: 'authentication', description: 'Autenticación de usuarios', enabled: this.botStateService.isFlowEnabled('authentication') },
+                { name: 'sales', description: 'Flujo de ventas', enabled: this.botStateService.isFlowEnabled('sales') },
+                { name: 'clientMenu', description: 'Menú de cliente autenticado', enabled: this.botStateService.isFlowEnabled('clientMenu') },
+                { name: 'agentHandover', description: 'Transferencia a agente humano', enabled: this.botStateService.isFlowEnabled('agentHandover') },
+                { name: 'ticketCreation', description: 'Creación de tickets', enabled: this.botStateService.isFlowEnabled('ticketCreation') },
+                { name: 'invoices', description: 'Consulta de facturas', enabled: this.botStateService.isFlowEnabled('invoices') },
+                { name: 'passwordChange', description: 'Cambio de contraseña', enabled: this.botStateService.isFlowEnabled('passwordChange') },
+                { name: 'planUpgrade', description: 'Mejora de plan', enabled: this.botStateService.isFlowEnabled('planUpgrade') },
+                { name: 'paymentReceipt', description: 'Validación de pagos', enabled: this.botStateService.isFlowEnabled('paymentReceipt') },
+                { name: 'debtInquiry', description: 'Consulta de deudas', enabled: this.botStateService.isFlowEnabled('debtInquiry') },
+                { name: 'logout', description: 'Cerrar sesión', enabled: this.botStateService.isFlowEnabled('logout') },
+                { name: 'suspendedService', description: 'Servicio suspendido', enabled: this.botStateService.isFlowEnabled('suspendedService') }
             ];
 
             res.json({
                 success: true,
-                data: availableFlows
+                data: {
+                    flows: availableFlows
+                }
             });
         } catch (error) {
             console.error('Error obteniendo flujos disponibles:', error);
@@ -290,8 +279,8 @@ export class BotControlController {
         try {
             const { flowName } = req.params;
 
-            BotControlController.enabledFlows.add(flowName);
-            this.addLog('info', `Flujo '${flowName}' habilitado`);
+            this.botStateService.enableFlow(flowName);
+            this.botStateService.addLog('info', `Flujo '${flowName}' habilitado`);
 
             res.json({
                 success: true,
@@ -319,8 +308,8 @@ export class BotControlController {
         try {
             const { flowName } = req.params;
 
-            BotControlController.enabledFlows.delete(flowName);
-            this.addLog('info', `Flujo '${flowName}' deshabilitado`);
+            this.botStateService.disableFlow(flowName);
+            this.botStateService.addLog('info', `Flujo '${flowName}' deshabilitado`);
 
             res.json({
                 success: true,
@@ -346,22 +335,13 @@ export class BotControlController {
      */
     async getActiveSessions(req: Request, res: Response): Promise<void> {
         try {
-            // TODO: Implementar obtención real de sesiones activas
-            const mockSessions = [
-                {
-                    phoneNumber: '+57300000001',
-                    authenticated: true,
-                    flowActive: 'clientMenu',
-                    lastActivity: new Date(),
-                    sessionDuration: 1800000 // 30 min
-                }
-            ];
+            // TODO: Implementar obtención de sesiones reales
+            const sessions = [];
 
             res.json({
                 success: true,
                 data: {
-                    totalSessions: mockSessions.length,
-                    sessions: mockSessions
+                    sessions
                 }
             });
         } catch (error) {
@@ -374,7 +354,7 @@ export class BotControlController {
     }
 
     /**
-     * Limpiar sesión de usuario específico
+     * Limpiar sesión de usuario
      * DELETE /api/bot/sessions/:phoneNumber
      */
     async clearUserSession(req: Request, res: Response): Promise<void> {
@@ -382,21 +362,21 @@ export class BotControlController {
             const { phoneNumber } = req.params;
 
             // TODO: Implementar limpieza real de sesión
-            this.addLog('info', `Sesión limpiada para usuario: ${phoneNumber}`);
+            this.botStateService.addLog('info', `Sesión limpiada para: ${phoneNumber}`);
 
             res.json({
                 success: true,
-                message: `Sesión del usuario ${phoneNumber} limpiada correctamente`,
+                message: `Sesión de ${phoneNumber} limpiada correctamente`,
                 data: {
                     phoneNumber,
                     timestamp: new Date().toISOString()
                 }
             });
         } catch (error) {
-            console.error('Error limpiando sesión de usuario:', error);
+            console.error('Error limpiando sesión:', error);
             res.status(500).json({
                 success: false,
-                error: 'Error limpiando sesión de usuario'
+                error: 'Error limpiando sesión'
             });
         }
     }
@@ -408,7 +388,7 @@ export class BotControlController {
     async clearAllSessions(req: Request, res: Response): Promise<void> {
         try {
             // TODO: Implementar limpieza real de todas las sesiones
-            this.addLog('info', 'Todas las sesiones han sido limpiadas');
+            this.botStateService.addLog('info', 'Todas las sesiones han sido limpiadas');
 
             res.json({
                 success: true,
@@ -432,20 +412,17 @@ export class BotControlController {
      */
     async getMessageMetrics(req: Request, res: Response): Promise<void> {
         try {
-            const metrics = {
-                totalProcessed: BotControlController.metrics.messagesProcessed,
-                totalErrors: BotControlController.metrics.errorsCount,
-                successRate: BotControlController.metrics.messagesProcessed > 0
-                    ? ((BotControlController.metrics.messagesProcessed - BotControlController.metrics.errorsCount) / BotControlController.metrics.messagesProcessed * 100).toFixed(2)
-                    : '100.00',
-                averageResponseTime: '1.2s', // TODO: Implementar cálculo real
-                messagesPerMinute: this.calculateMessagesPerMinute(),
-                lastActivity: BotControlController.metrics.lastActivity
-            };
+            const metrics = this.botStateService.getMetrics();
 
             res.json({
                 success: true,
-                data: metrics
+                data: {
+                    totalProcessed: metrics.messagesProcessed,
+                    totalErrors: metrics.errorsCount,
+                    averageResponseTime: 1200, // TODO: Calcular tiempo real
+                    uptime: metrics.uptime,
+                    timestamp: new Date().toISOString()
+                }
             });
         } catch (error) {
             console.error('Error obteniendo métricas de mensajes:', error);
@@ -463,12 +440,12 @@ export class BotControlController {
     async getFlowMetrics(req: Request, res: Response): Promise<void> {
         try {
             // TODO: Implementar métricas reales de flujos
-            const flowMetrics = [
-                { flowName: 'sales', usage: 45, avgDuration: '3m 20s' },
-                { flowName: 'authentication', usage: 32, avgDuration: '1m 15s' },
-                { flowName: 'agentHandover', usage: 18, avgDuration: '45s' },
-                { flowName: 'clientMenu', usage: 28, avgDuration: '2m 10s' }
-            ];
+            const flowMetrics = {
+                initialSelection: { executions: 0, errors: 0 },
+                authentication: { executions: 0, errors: 0 },
+                sales: { executions: 0, errors: 0 },
+                clientMenu: { executions: 0, errors: 0 }
+            };
 
             res.json({
                 success: true,
@@ -489,21 +466,15 @@ export class BotControlController {
      */
     async getErrorMetrics(req: Request, res: Response): Promise<void> {
         try {
-            const errorMetrics = {
-                totalErrors: BotControlController.metrics.errorsCount,
-                errorRate: BotControlController.metrics.messagesProcessed > 0
-                    ? (BotControlController.metrics.errorsCount / BotControlController.metrics.messagesProcessed * 100).toFixed(2)
-                    : '0.00',
-                commonErrors: [
-                    { type: 'Authentication Failed', count: 5 },
-                    { type: 'Flow Processing Error', count: 3 },
-                    { type: 'Rate Limit Exceeded', count: 2 }
-                ]
-            };
+            const metrics = this.botStateService.getMetrics();
 
             res.json({
                 success: true,
-                data: errorMetrics
+                data: {
+                    totalErrors: metrics.errorsCount,
+                    errorRate: metrics.messagesProcessed > 0 ? (metrics.errorsCount / metrics.messagesProcessed) * 100 : 0,
+                    timestamp: new Date().toISOString()
+                }
             });
         } catch (error) {
             console.error('Error obteniendo métricas de errores:', error);
@@ -520,21 +491,28 @@ export class BotControlController {
      */
     async getBotLogs(req: Request, res: Response): Promise<void> {
         try {
-            const { limit = 100, level } = req.query;
+            const { level, limit } = req.query;
+            let logs = this.botStateService.getLogs();
 
-            let logs = BotControlController.logs;
-
+            // Filtrar por nivel si se especifica
             if (level) {
                 logs = logs.filter(log => log.level === level);
             }
 
-            logs = logs.slice(-parseInt(limit as string));
+            // Limitar cantidad si se especifica
+            if (limit) {
+                const limitNum = parseInt(limit as string);
+                logs = logs.slice(-limitNum);
+            }
 
             res.json({
                 success: true,
                 data: {
-                    total: logs.length,
-                    logs: logs
+                    logs: logs.map(log => ({
+                        timestamp: log.timestamp.toISOString(),
+                        level: log.level,
+                        message: log.message
+                    }))
                 }
             });
         } catch (error) {
@@ -552,13 +530,18 @@ export class BotControlController {
      */
     async getErrorLogs(req: Request, res: Response): Promise<void> {
         try {
-            const errorLogs = BotControlController.logs.filter(log => log.level === 'error');
+            const logs = this.botStateService.getLogs()
+                .filter(log => log.level === 'error')
+                .slice(-50); // Últimos 50 errores
 
             res.json({
                 success: true,
                 data: {
-                    total: errorLogs.length,
-                    logs: errorLogs.slice(-50) // Últimos 50 errores
+                    logs: logs.map(log => ({
+                        timestamp: log.timestamp.toISOString(),
+                        level: log.level,
+                        message: log.message
+                    }))
                 }
             });
         } catch (error) {
@@ -578,15 +561,16 @@ export class BotControlController {
         try {
             const { message } = req.body;
 
-            BotControlController.botStatus = 'maintenance';
-            this.addLog('info', `Modo mantenimiento habilitado. Mensaje: ${message || 'Sin mensaje personalizado'}`);
+            this.botStateService.setBotStatus('maintenance');
+            this.botStateService.setMaintenanceMessage(message || '');
+            this.botStateService.addLog('info', 'Modo mantenimiento habilitado');
 
             res.json({
                 success: true,
-                message: 'Modo mantenimiento habilitado',
+                message: 'Modo mantenimiento habilitado correctamente',
                 data: {
-                    status: BotControlController.botStatus,
-                    maintenanceMessage: message,
+                    status: this.botStateService.getBotStatus(),
+                    maintenanceMessage: this.botStateService.getMaintenanceMessage(),
                     timestamp: new Date().toISOString()
                 }
             });
@@ -605,14 +589,15 @@ export class BotControlController {
      */
     async disableMaintenanceMode(req: Request, res: Response): Promise<void> {
         try {
-            BotControlController.botStatus = 'running';
-            this.addLog('info', 'Modo mantenimiento deshabilitado');
+            this.botStateService.setBotStatus('running');
+            this.botStateService.setMaintenanceMessage('');
+            this.botStateService.addLog('info', 'Modo mantenimiento deshabilitado');
 
             res.json({
                 success: true,
-                message: 'Modo mantenimiento deshabilitado',
+                message: 'Modo mantenimiento deshabilitado correctamente',
                 data: {
-                    status: BotControlController.botStatus,
+                    status: this.botStateService.getBotStatus(),
                     timestamp: new Date().toISOString()
                 }
             });
@@ -626,7 +611,7 @@ export class BotControlController {
     }
 
     /**
-     * Obtener estado del modo mantenimiento
+     * Obtener estado del mantenimiento
      * GET /api/bot/maintenance/status
      */
     async getMaintenanceStatus(req: Request, res: Response): Promise<void> {
@@ -634,99 +619,38 @@ export class BotControlController {
             res.json({
                 success: true,
                 data: {
-                    maintenanceMode: BotControlController.botStatus === 'maintenance',
-                    status: BotControlController.botStatus,
+                    maintenanceMode: this.botStateService.isInMaintenanceMode(),
+                    message: this.botStateService.getMaintenanceMessage(),
                     timestamp: new Date().toISOString()
                 }
             });
         } catch (error) {
-            console.error('Error obteniendo estado de mantenimiento:', error);
+            console.error('Error obteniendo estado del mantenimiento:', error);
             res.status(500).json({
                 success: false,
-                error: 'Error obteniendo estado de mantenimiento'
+                error: 'Error obteniendo estado del mantenimiento'
             });
         }
     }
 
-    // ============ MÉTODOS UTILITARIOS ============
-
     /**
-     * Formatear tiempo de actividad
+     * Formatea el tiempo de actividad en un formato legible
      */
-    private formatUptime(uptime: number): string {
-        const seconds = Math.floor(uptime / 1000);
-        const minutes = Math.floor(seconds / 60);
-        const hours = Math.floor(minutes / 60);
-        const days = Math.floor(hours / 24);
+    private formatUptime(uptimeMs: number): string {
+        const seconds = Math.floor(uptimeMs / 1000);
+        const days = Math.floor(seconds / 86400);
+        const hours = Math.floor((seconds % 86400) / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const secs = seconds % 60;
 
         if (days > 0) {
-            return `${days}d ${hours % 24}h ${minutes % 60}m`;
+            return `${days}d ${hours}h ${minutes}m ${secs}s`;
         } else if (hours > 0) {
-            return `${hours}h ${minutes % 60}m`;
+            return `${hours}h ${minutes}m ${secs}s`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${secs}s`;
         } else {
-            return `${minutes}m ${seconds % 60}s`;
+            return `${secs}s`;
         }
-    }
-
-    /**
-     * Calcular mensajes por minuto
-     */
-    private calculateMessagesPerMinute(): number {
-        const uptimeMinutes = (Date.now() - BotControlController.metrics.startTime.getTime()) / (1000 * 60);
-        return uptimeMinutes > 0 ? Math.round(BotControlController.metrics.messagesProcessed / uptimeMinutes) : 0;
-    }
-
-    /**
-     * Agregar log
-     */
-    private addLog(level: string, message: string): void {
-        BotControlController.logs.push({
-            timestamp: new Date(),
-            level,
-            message
-        });
-
-        // Mantener solo los últimos 1000 logs
-        if (BotControlController.logs.length > 1000) {
-            BotControlController.logs = BotControlController.logs.slice(-1000);
-        }
-    }
-
-    // ============ MÉTODOS ESTÁTICOS PARA USO INTERNO ============
-
-    /**
-     * Incrementar contador de mensajes procesados
-     */
-    static incrementMessageCount(): void {
-        BotControlController.metrics.messagesProcessed++;
-        BotControlController.metrics.lastActivity = new Date();
-    }
-
-    /**
-     * Incrementar contador de errores
-     */
-    static incrementErrorCount(): void {
-        BotControlController.metrics.errorsCount++;
-    }
-
-    /**
-     * Verificar si el bot está activo
-     */
-    static isBotActive(): boolean {
-        return BotControlController.botStatus === 'running';
-    }
-
-    /**
-     * Verificar si un flujo está habilitado
-     */
-    static isFlowEnabled(flowName: string): boolean {
-        return BotControlController.enabledFlows.has(flowName);
-    }
-
-    /**
-     * Obtener estado actual del bot
-     */
-    static getCurrentStatus(): string {
-        return BotControlController.botStatus;
     }
 }

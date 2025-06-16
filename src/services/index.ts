@@ -8,3 +8,4 @@ export * from './SessionManager';
 export * from './MultiServiceManager';
 export * from './InvoiceCacheService';
 export * from './DiagnosticService';
+export * from './BotStateService';
